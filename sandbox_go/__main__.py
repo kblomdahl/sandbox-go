@@ -200,57 +200,8 @@ def get_dataset(batch_size):
                 np.asarray([], 'f4'),  # policy
             )
 
-    def _augment(features, value, policy):
-        def _identity(image):
-            return image
-
-        def _flip_lr(image):
-            return tf.reverse_v2(image, [2])
-
-        def _flip_ud(image):
-            return tf.reverse_v2(image, [1])
-
-        def _transpose_main(image):
-            return tf.transpose(image, [0, 2, 1])
-
-        def _transpose_anti(image):
-            return tf.reverse_v2(tf.transpose(image, [0, 2, 1]), [1, 2])
-
-        def _rot90(image):
-            return tf.transpose(tf.reverse_v2(image, [2]), [0, 2, 1])
-
-        def _rot180(image):
-            return tf.reverse_v2(image, [1, 2])
-
-        def _rot270(image):
-            return tf.reverse_v2(tf.transpose(image, [0, 2, 1]), [2])
-
-        def _apply_random(random, x):
-            return tf.case([
-                    (tf.equal(random, 0), lambda: _identity(x)),
-                    (tf.equal(random, 1), lambda: _flip_lr(x)),
-                    (tf.equal(random, 2), lambda: _flip_ud(x)),
-                    (tf.equal(random, 3), lambda: _transpose_main(x)),
-                    (tf.equal(random, 4), lambda: _transpose_anti(x)),
-                    (tf.equal(random, 5), lambda: _rot90(x)),
-                    (tf.equal(random, 6), lambda: _rot180(x)),
-                    (tf.equal(random, 7), lambda: _rot270(x)),
-                ],
-                None,
-                exclusive=True
-            )
-
-        random = tf.random_uniform((), 0, 8, tf.int32)
+    def _fix_shape(features, value, policy):
         features = tf.reshape(features, [5, 19, 19])
-        features = _apply_random(random, features)
-
-        # transforming the policy is _harder_ since it has that extra pass
-        # element at the end, so we temporarily remove it while the tensor gets
-        # a random transformation applied
-        policy, policy_pass = tf.split(policy, (361, 1))
-        policy = tf.reshape(_apply_random(random, tf.reshape(policy, [1, 19, 19])), [361])
-        policy = tf.concat([policy, policy_pass], 0)
-
         value = tf.reshape(value, [1])
         policy = tf.reshape(policy, [362])
 
@@ -264,7 +215,7 @@ def get_dataset(batch_size):
         [tf.float32, tf.float32, tf.float32]
     )))
     dataset = dataset.filter(lambda _f, value, _p: tf.not_equal(value, 0.0))
-    dataset = dataset.map(_augment)
+    dataset = dataset.map(_fix_shape)
     dataset = dataset.shuffle(384000)
     dataset = dataset.batch(batch_size)
 

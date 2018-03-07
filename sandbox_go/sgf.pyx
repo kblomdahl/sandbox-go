@@ -47,6 +47,38 @@ cdef int count_moves(unsigned char *line, int line_length) nogil:
     return count
 
 @cython.boundscheck(False)
+cdef void _augment(int xx, int xy, int *x, int yx, int yy, int *y) nogil:
+    cdef int x_ = x[0]
+    cdef int y_ = y[0]
+    cdef int cx = x_ - 9
+    cdef int cy = y_ - 9
+
+    x[0] = 9 + (xx * cx + xy * cy)
+    y[0] = 9 + (yx * cx + yy * cy)
+
+    assert x[0] >= 0 and x[0] < 19
+    assert y[0] >= 0 and y[0] < 19
+
+@cython.boundscheck(False)
+cdef void augment(int s, int *x, int *y) nogil:
+    if s == 0:  # identity
+        pass
+    elif s == 1:  # flip across horizontal axis
+        _augment(-1, 0, x, 0, 1, y)
+    elif s == 2:  # flip across the vertical axis
+        _augment(1, 0, x, 0, -1, y)
+    elif s == 3:  # flip across the main diagonal
+        _augment(0, 1, x, 1, 0, y)
+    elif s == 4:  # flip across the anti diagonal
+        _augment(0, -1, x, -1, 0, y)
+    elif s == 5:  # rotate 90 degrees clockwise
+        _augment(0, 1, x, -1, 0, y)
+    elif s == 6:  # rotate 180 degrees clockwise
+        _augment(-1, 0, x, 0, -1, y)
+    elif s == 7:  # rotate 270 degrees clockwise
+        _augment(0, -1, x, 1, 0, y)
+
+@cython.boundscheck(False)
 cdef int _one(Board board, unsigned char *line, int line_length) nogil:
     # count the number of moves played without doing anything, this is done so
     # that we do not need to playout more of the game than we need to.
@@ -62,6 +94,7 @@ cdef int _one(Board board, unsigned char *line, int line_length) nogil:
         return 0
 
     cdef int pluck_move = <int>(total_moves * (<double>rand() / RAND_MAX))
+    cdef int symmetry = <int>(8 * (<double>rand() / RAND_MAX))
 
     # scan for the following _patterns_ in the line without actually parsing it
     # in any meaningful way. We do it in this stupid way for performance
@@ -97,6 +130,8 @@ cdef int _one(Board board, unsigned char *line, int line_length) nogil:
                 color = BLACK if line[i-4] == 66 else WHITE
                 x = line[i-2] - 97
                 y = line[i-1] - 97
+                augment(symmetry, &x, &y)
+
                 index = 19 * y + x
 
                 if x >= 19 and y >= 19:  # alternative notation for `pass`
