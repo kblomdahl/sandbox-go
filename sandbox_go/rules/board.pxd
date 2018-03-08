@@ -45,3 +45,8 @@ cdef class Board:
     cdef void _connect_with(self, int index, int other) nogil
     cdef void _place(self, int color, int index) nogil
     cpdef void place(self, int color, int x, int y)
+
+    cdef int _get_pattern_code(self, int color, int index) nogil
+    cdef int _get_pattern(self, int color, int index) nogil
+
+    cdef int get_num_liberties(self, int index) nogil

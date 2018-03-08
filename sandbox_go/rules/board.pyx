@@ -256,6 +256,63 @@ cdef class Board:
 
         self._place(color, 19 * y + x)
 
+    cdef int _get_pattern_code(self, int color, int index) nogil:
+        """ Returns the 2-bit pattern of the vertex at the given
+        index (normalized to the given color). """
+
+        cdef int other = opposite(color)
+
+        if self.vertices[index] == 0:
+            return 0
+        elif self.vertices[index] == color:
+            return 1
+        elif self.vertices[index] == other:
+            return 2
+        else:
+            return 3
+
+    cdef int _get_pattern(self, int color, int index) nogil:
+        """ Return the 3x3 pattern around the given `index`, normalized so that
+        the given `color` is the current player. """
+
+        cdef int pattern = (self._get_pattern_code(color, _N[index]) << 16) \
+            | (self._get_pattern_code(color, _E[_N[index]]) << 14) \
+            | (self._get_pattern_code(color, _E[index]) << 12) \
+            | (self._get_pattern_code(color, _E[_S[index]]) << 10) \
+            | (self._get_pattern_code(color, _S[index]) << 8) \
+            | (self._get_pattern_code(color, _W[_S[index]]) << 6) \
+            | (self._get_pattern_code(color, _W[index]) << 4) \
+            | (self._get_pattern_code(color, _W[_N[index]]) << 2) \
+            | (self._get_pattern_code(color, index) << 0)
+
+        return pattern
+
+    cdef int get_num_liberties(self, int index) nogil:
+        """ Returns the total number of liberties that the group the given
+        index belongs to has. """
+        cdef char visited[362];
+        cdef int starting_index = index;
+        cdef int count = 0
+        cdef int[4] ns
+        cdef int n
+
+        for i in range(361):
+            visited[i] = 0
+        visited[361] = 1
+
+        while True:
+            neighbours(index, ns)
+            for n in ns:
+                if self.vertices[n] == 0 and visited[n] == 0:
+                    visited[n] = 1
+                    count += 1
+
+            index = self.next_vertex[index]
+            if index == starting_index:
+                break
+
+        return count
+
 # -------- Code Generation --------
 
 cdef int *_N = [
@@ -284,7 +341,7 @@ cdef int *_N = [
     327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340,
     341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354,
     355, 356, 357, 358, 359, 360, 361, 361, 361, 361, 361, 361, 361, 361,
-    361, 361, 361, 361, 361, 361, 361, 361, 361, 361, 361
+    361, 361, 361, 361, 361, 361, 361, 361, 361, 361, 361, 361
 ]
 
 cdef int *_E = [
@@ -313,7 +370,7 @@ cdef int *_E = [
     309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322,
     361, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336,
     337, 338, 339, 340, 341, 361, 343, 344, 345, 346, 347, 348, 349, 350,
-    351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361
+    351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 361
 ]
 
 cdef int *_S = [
@@ -342,7 +399,7 @@ cdef int *_S = [
     289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302,
     303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316,
     317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330,
-    331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341
+    331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 361
 ]
 
 cdef int *_W = [
@@ -371,7 +428,7 @@ cdef int *_W = [
     307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320,
     321, 361, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334,
     335, 336, 337, 338, 339, 340, 361, 342, 343, 344, 345, 346, 347, 348,
-    349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359
+    349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 361
 ]
 
 

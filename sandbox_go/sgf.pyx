@@ -56,9 +56,6 @@ cdef void _augment(int xx, int xy, int *x, int yx, int yy, int *y) nogil:
     x[0] = 9 + (xx * cx + xy * cy)
     y[0] = 9 + (yx * cx + yy * cy)
 
-    assert x[0] >= 0 and x[0] < 19
-    assert y[0] >= 0 and y[0] < 19
-
 @cython.boundscheck(False)
 cdef void augment(int s, int *x, int *y) nogil:
     if s == 0:  # identity
@@ -166,7 +163,7 @@ def one(line):
     # this can get fairly expensive
     cdef unsigned char *line_ptr = <unsigned char*>line
     cdef int line_length = len(line)
-    cdef np.ndarray features = np.zeros((5, 361), 'f4')
+    cdef np.ndarray features = np.zeros((3, 361), 'f4')
     cdef float[:,:] features_view = features
     cdef int winner_color_index, winner, color, index
 

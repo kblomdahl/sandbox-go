@@ -26,9 +26,44 @@ import numpy as np
 from datetime import datetime
 from glob import glob
 
+def embedding_layer(x, shape, channel, name=None):
+    with tf.name_scope(name, 'embedding'):
+        embeddings = tf.get_variable('embeddings', shape)
+
+        # extract and flatten the channel that we are going to replace with an
+        # embedding
+        x_unstack = tf.unstack(x, axis=1)  # unstack channels
+        x_ids = tf.cast(tf.reshape(x_unstack[channel], [-1]), tf.int32)
+
+        x_pattern = tf.nn.embedding_lookup(
+            embeddings,
+            x_ids,
+            max_norm=shape[1]
+        )
+
+        # since the embedding is at the last dimension, and we are using the NCHW
+        # order, we need to transpose the embedded tensor
+        x_pattern = tf.reshape(x_pattern, [-1, 19, 19, shape[1]])
+        x_pattern = tf.transpose(x_pattern, [0, 3, 1, 2])
+
+        # replace the channel in the input vector with the embeddings
+        x_pattern_unstack = tf.unstack(x_pattern, axis=1)
+        x_unstack.pop(channel)
+
+        return tf.stack(x_unstack + x_pattern_unstack, axis=1)
+
+
 def tower(x, mode, params):
+    y = embedding_layer(x, [22923, params['num_patterns']], 2, name='pattern')
+
+    # the start of the tower as described by DeepMind:
+    #
+    # 1. A convolution of 256 filters of kernel size 3×3 with stride 1
+    # 2. Batch normalization
+    # 3. A rectifier nonlinearity
+    #
     y = tf.layers.conv2d(
-        x,
+        y,
         params['num_channels'],  # filters
         3,  # kernel_size
         1,  # strides
@@ -189,6 +224,7 @@ def tower(x, mode, params):
 
     return v, p
 
+
 def get_dataset(batch_size):
     def _parse_sgf(line):
         try:
@@ -201,7 +237,7 @@ def get_dataset(batch_size):
             )
 
     def _fix_shape(features, value, policy):
-        features = tf.reshape(features, [5, 19, 19])
+        features = tf.reshape(features, [3, 19, 19])
         value = tf.reshape(value, [1])
         policy = tf.reshape(policy, [362])
 
@@ -227,6 +263,7 @@ def input_fn(batch_size):
         (features, {'value': value, 'policy': policy})
     )
 
+
 def model_fn(features, labels, mode, params):
     value_hat, policy_hat = tower(features, mode, params)
 
@@ -247,7 +284,7 @@ def model_fn(features, labels, mode, params):
 
     # setup the optimizer
     global_step = tf.train.get_global_step()
-    learning_rate = tf.train.exponential_decay(1e-2, global_step, 20000, 0.94)
+    learning_rate = tf.train.exponential_decay(1e-2, global_step, 5000, 0.96)
     optimizer = tf.train.MomentumOptimizer(0.1, learning_rate, use_nesterov=True)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
@@ -285,6 +322,6 @@ batch_size = 32
 nn = tf.estimator.Estimator(
     model_fn=model_fn,
     model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
-    params={'num_channels': 128, 'num_blocks': 9}
+    params={'num_channels': 128, 'num_blocks': 9, 'num_patterns': 16}
 )
 nn.train(input_fn=lambda: input_fn(batch_size), steps=26214400/batch_size)
