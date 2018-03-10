@@ -48,9 +48,19 @@ def embedding_layer(x, shape, channel, name=None):
 
         # replace the channel in the input vector with the embeddings
         x_pattern_unstack = tf.unstack(x_pattern, axis=1)
-        x_unstack.pop(channel)
+        x_head = x_unstack[:channel]
+        x_tail = x_unstack[(channel+1):]
 
-        return tf.stack(x_unstack + x_pattern_unstack, axis=1)
+        return tf.stack(x_head + x_pattern_unstack + x_tail, axis=1)
+
+
+def prelu(x):
+    """ Parameterised relu. """
+
+    with tf.variable_scope('prelu'):
+        alpha = tf.get_variable('alpha')
+
+        return tf.nn.leaky_relu(x, alpha)
 
 
 def tower(x, mode, params):
