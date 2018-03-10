@@ -32,6 +32,8 @@ cdef class Board:
 
     # -------- Methods --------
 
+    cpdef Board copy(self)
+
     cdef int _has_one_liberty(self, int index) nogil
     cdef int _has_two_liberty(self, int index) nogil
 
@@ -48,5 +50,6 @@ cdef class Board:
 
     cdef int _get_pattern_code(self, int color, int index) nogil
     cdef int _get_pattern(self, int color, int index) nogil
+    cpdef int get_pattern(self, int color, int x, int y)
 
-    cdef int get_num_liberties(self, int index) nogil
+    cdef int _get_num_liberties(self, int index) nogil

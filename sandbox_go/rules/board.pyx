@@ -43,6 +43,25 @@ cdef class Board:
             self.zobrist_hashes[i] = 0
         self.zobrist_hashes_index = 0
 
+    cpdef Board copy(self):
+        """ Returns a copy of this board. """
+
+        cdef int i
+
+        other = Board()
+
+        for i in range(368):
+            other.vertices[i] = self.vertices[i]
+            other.next_vertex[i] = self.next_vertex[i]
+
+        other.zobrist_hash = self.zobrist_hash
+        other.zobrist_hashes_index = self.zobrist_hashes_index
+
+        for i in range(8):
+            other.zobrist_hashes[i] = self.zobrist_hashes[i]
+
+        return other
+
     cdef int _has_one_liberty(self, int index) nogil:
         """ Returns a non-zero value if the group that the given vertex belongs
         to has **at least** one liberty. """
@@ -287,7 +306,13 @@ cdef class Board:
 
         return pattern
 
-    cdef int get_num_liberties(self, int index) nogil:
+    cpdef int get_pattern(self, int color, int x, int y):
+        """ Return the 3x3 pattern around the given `index`, normalized so that
+        the given `color` is the current player. """
+
+        return self._get_pattern(color, 19 * y + x)
+
+    cdef int _get_num_liberties(self, int index) nogil:
         """ Returns the total number of liberties that the group the given
         index belongs to has. """
         cdef char visited[362];

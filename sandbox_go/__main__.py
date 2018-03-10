@@ -27,7 +27,7 @@ from datetime import datetime
 from glob import glob
 
 def embedding_layer(x, shape, channel, name=None):
-    with tf.name_scope(name, 'embedding'):
+    with tf.variable_scope(name, 'embedding'):
         embeddings = tf.get_variable('embeddings', shape)
 
         # extract and flatten the channel that we are going to replace with an
@@ -54,7 +54,7 @@ def embedding_layer(x, shape, channel, name=None):
 
 
 def tower(x, mode, params):
-    y = embedding_layer(x, [22923, params['num_patterns']], 2, name='pattern')
+    y = embedding_layer(x, [22665, params['num_patterns']], 2, name='pattern')
 
     # the start of the tower as described by DeepMind:
     #
@@ -284,7 +284,7 @@ def model_fn(features, labels, mode, params):
 
     # setup the optimizer
     global_step = tf.train.get_global_step()
-    learning_rate = tf.train.exponential_decay(1e-2, global_step, 5000, 0.96)
+    learning_rate = tf.train.exponential_decay(1e-1, global_step, 16000 / params['batch_size'], 0.96)
     optimizer = tf.train.MomentumOptimizer(0.1, learning_rate, use_nesterov=True)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
@@ -318,10 +318,10 @@ def model_fn(features, labels, mode, params):
 # reduce the amount of spam that we're getting to the console
 tf.logging.set_verbosity(tf.logging.WARN)  
 
-batch_size = 32
+batch_size = 256
 nn = tf.estimator.Estimator(
     model_fn=model_fn,
     model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
-    params={'num_channels': 128, 'num_blocks': 9, 'num_patterns': 16}
+    params={'num_channels': 128, 'num_blocks': 9, 'num_patterns': 64, 'batch_size': batch_size}
 )
 nn.train(input_fn=lambda: input_fn(batch_size), steps=26214400/batch_size)
