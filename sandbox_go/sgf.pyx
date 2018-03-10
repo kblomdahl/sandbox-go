@@ -163,7 +163,7 @@ def one(line):
     # this can get fairly expensive
     cdef unsigned char *line_ptr = <unsigned char*>line
     cdef int line_length = len(line)
-    cdef np.ndarray features = np.zeros((3, 361), 'f4')
+    cdef np.ndarray features = np.zeros((19, 361), 'f4')
     cdef float[:,:] features_view = features
     cdef int winner_color_index, winner, color, index
 

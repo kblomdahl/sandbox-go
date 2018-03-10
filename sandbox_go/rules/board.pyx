@@ -340,6 +340,7 @@ cdef class Board:
 
         return count
 
+
 # -------- Code Generation --------
 
 cdef int *_N = [

@@ -237,7 +237,7 @@ def get_dataset(batch_size):
             )
 
     def _fix_shape(features, value, policy):
-        features = tf.reshape(features, [3, 19, 19])
+        features = tf.reshape(features, [19, 19, 19])
         value = tf.reshape(value, [1])
         policy = tf.reshape(policy, [362])
 
@@ -316,12 +316,12 @@ def model_fn(features, labels, mode, params):
     )
 
 # reduce the amount of spam that we're getting to the console
-tf.logging.set_verbosity(tf.logging.WARN)  
+tf.logging.set_verbosity(tf.logging.WARN)
 
 batch_size = 256
 nn = tf.estimator.Estimator(
     model_fn=model_fn,
     model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
-    params={'num_channels': 128, 'num_blocks': 9, 'num_patterns': 64, 'batch_size': batch_size}
+    params={'num_channels': 128, 'num_blocks': 9, 'num_patterns': 32, 'batch_size': batch_size}
 )
 nn.train(input_fn=lambda: input_fn(batch_size), steps=26214400/batch_size)

@@ -45,6 +45,7 @@ cdef void get_features(Board board, int color, float[:,:] out) nogil:
 
     cdef float is_black = 1.0 if color == BLACK else 0.0
     cdef float is_white = 1.0 if color == WHITE else 0.0
+    cdef int liberty_count
     cdef int other = opposite(color)
     cdef int x, y, index
 
@@ -55,6 +56,20 @@ cdef void get_features(Board board, int color, float[:,:] out) nogil:
             out[0, index] = is_black
             out[1, index] = is_white
             out[2, index] = <float>binary_search(board._get_pattern(color, index))
+
+            if board.vertices[index] == color:
+                liberty_count = board._get_num_liberties(index) - 1
+                if liberty_count > 7:
+                    liberty_count = 7
+
+                out[3 + liberty_count, index] = 1.0
+            elif board.vertices[index] == other:
+                liberty_count = board._get_num_liberties(index) - 1
+                if liberty_count > 7:
+                    liberty_count = 7
+
+                out[11 + liberty_count, index] = 1.0
+
 
 # -------- Code Generation --------
 
