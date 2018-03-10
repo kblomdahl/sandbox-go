@@ -183,6 +183,43 @@ def tower(x, mode, params):
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
+    # The policy head as described by DeepMind:
+    #
+    #   1. A convolution of 2 filters of kernel size 1×1 with stride 1
+    #   2. Batch normalization
+    #   3. A rectifier nonlinearity
+    #   4. A fully connected linear layer that outputs a vector of
+    #      size 19² + 1 = 362.
+    #
+    q = tf.layers.conv2d(
+        y,
+        2,  # filters
+        1,  # kernel_size
+        1,  # strides
+        'same',  # padding
+        'channels_first',  # data_format
+        use_bias=True,
+        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
+    )
+
+    q = tf.layers.batch_normalization(
+        q,
+        scale=False,
+        fused=True,
+        training=(mode == tf.estimator.ModeKeys.TRAIN),
+        trainable=False
+    )
+
+    q = tf.nn.relu(q)
+
+    q = tf.layers.dense(
+        tf.reshape(q, [-1, 722]),  # inputs
+        362,  # units
+        use_bias=True,
+        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
+    )
+
+
     # The value head as described by DeepMind:
     #
     #   1. A convolution of 1 filter of kernel size 1×1 with stride 1
@@ -232,7 +269,7 @@ def tower(x, mode, params):
 
     v = tf.nn.tanh(v)
 
-    return v, p
+    return v, p, q
 
 
 def get_dataset(batch_size):
@@ -243,24 +280,26 @@ def get_dataset(batch_size):
             return (
                 np.asarray([], 'f4'),  # features
                 np.asarray([0.0], 'f4'),  # value
-                np.asarray([], 'f4'),  # policy
+                np.asarray([], 'f4'),  # policy1
+                np.asarray([], 'f4'),  # policy2
             )
 
-    def _fix_shape(features, value, policy):
-        features = tf.reshape(features, [19, 19, 19])
+    def _fix_shape(features, value, policy1, policy2):
+        features = tf.reshape(features, [3, 19, 19])
         value = tf.reshape(value, [1])
-        policy = tf.reshape(policy, [362])
+        policy1 = tf.reshape(policy1, [362])
+        policy2 = tf.reshape(policy2, [362])
 
-        return features, value, policy
+        return features, value, policy1, policy2
 
     dataset = tf.data.TextLineDataset(glob('data/*.sgf'))
     dataset = dataset.repeat()
     dataset = dataset.map(lambda text: tuple(tf.py_func(
         _parse_sgf,
         [text],
-        [tf.float32, tf.float32, tf.float32]
+        [tf.float32, tf.float32, tf.float32, tf.float32]
     )))
-    dataset = dataset.filter(lambda _f, value, _p: tf.not_equal(value, 0.0))
+    dataset = dataset.filter(lambda _f, value, _p1, _p2: tf.not_equal(value, 0.0))
     dataset = dataset.map(_fix_shape)
     dataset = dataset.shuffle(384000)
     dataset = dataset.batch(batch_size)
@@ -269,13 +308,13 @@ def get_dataset(batch_size):
 
 
 def input_fn(batch_size):
-    return get_dataset(batch_size).map(lambda features, value, policy:
-        (features, {'value': value, 'policy': policy})
+    return get_dataset(batch_size).map(lambda features, value, policy1, policy2:
+        (features, {'value': value, 'policy1': policy1, 'policy2': policy2})
     )
 
 
 def model_fn(features, labels, mode, params):
-    value_hat, policy_hat = tower(features, mode, params)
+    value_hat, policy1_hat, policy2_hat = tower(features, mode, params)
 
     # determine the loss
     loss_l2 = tf.losses.get_regularization_loss()
@@ -284,13 +323,18 @@ def model_fn(features, labels, mode, params):
         value_hat,
         weights=1.0
     )
-    loss_policy = tf.losses.softmax_cross_entropy(
-        labels['policy'],
-        policy_hat,
+    loss_policy1 = tf.losses.softmax_cross_entropy(
+        labels['policy1'],
+        policy1_hat,
+        weights=1.0
+    )
+    loss_policy2 = tf.losses.softmax_cross_entropy(
+        labels['policy2'],
+        policy2_hat,
         weights=1.0
     )
 
-    loss = loss_policy + loss_value + 8e-4 * loss_l2
+    loss = loss_policy1 + 0.5 * loss_policy2 + loss_value + 8e-4 * loss_l2
 
     # setup the optimizer
     global_step = tf.train.get_global_step()
@@ -303,14 +347,19 @@ def model_fn(features, labels, mode, params):
 
     # setup some nice looking metric to look at
     if mode == tf.estimator.ModeKeys.TRAIN:
-        policy_hot = tf.argmax(labels['policy'], axis=1)
+        policy1_hot = tf.argmax(labels['policy1'], axis=1)
+        policy2_hot = tf.argmax(labels['policy2'], axis=1)
 
-        tf.summary.scalar('accuracy/policy_1', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=1), tf.float32)))
-        tf.summary.scalar('accuracy/policy_3', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=3), tf.float32)))
-        tf.summary.scalar('accuracy/policy_5', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=5), tf.float32)))
+        tf.summary.scalar('accuracy/policy1_1', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy1_hat, policy1_hot, k=1), tf.float32)))
+        tf.summary.scalar('accuracy/policy1_3', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy1_hat, policy1_hot, k=3), tf.float32)))
+        tf.summary.scalar('accuracy/policy1_5', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy1_hat, policy1_hot, k=5), tf.float32)))
+        tf.summary.scalar('accuracy/policy2_1', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy2_hat, policy2_hot, k=1), tf.float32)))
+        tf.summary.scalar('accuracy/policy2_3', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy2_hat, policy2_hot, k=3), tf.float32)))
+        tf.summary.scalar('accuracy/policy2_5', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy2_hat, policy2_hot, k=5), tf.float32)))
         tf.summary.scalar('accuracy/value', tf.reduce_mean(tf.cast(tf.equal(tf.sign(labels['value']), tf.sign(value_hat)), tf.float32)))
 
-        tf.summary.scalar('loss/policy', loss_policy)
+        tf.summary.scalar('loss/policy1', loss_policy1)
+        tf.summary.scalar('loss/policy2', loss_policy2)
         tf.summary.scalar('loss/value', loss_value)
         tf.summary.scalar('loss/l2', loss_l2)
 
@@ -319,7 +368,7 @@ def model_fn(features, labels, mode, params):
     # put it all together into a specification
     return tf.estimator.EstimatorSpec(
         mode,
-        {'value': value_hat, 'policy': tf.nn.softmax(policy_hat)},
+        {'value': value_hat, 'policy1': tf.nn.softmax(policy1_hat), 'policy2': tf.nn.softmax(policy2_hat)},
         loss,
         train_op,
         {},  # eval_metric_ops
