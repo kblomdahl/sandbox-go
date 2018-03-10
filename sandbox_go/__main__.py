@@ -243,7 +243,7 @@ def get_dataset(batch_size):
 
         return features, value, policy
 
-    dataset = tf.data.TextLineDataset(glob('data/**/*.sgf', recursive=True))
+    dataset = tf.data.TextLineDataset(glob('data/*.sgf'))
     dataset = dataset.repeat()
     dataset = dataset.map(lambda text: tuple(tf.py_func(
         _parse_sgf,

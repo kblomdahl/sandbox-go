@@ -14,5 +14,9 @@ clean:
 init:
 	pip install -r requirements.txt
 
-run: build
-	python -m sandbox_go
+docker:
+	docker build -t "sandbox_go/sandbox_go:0.0.1" .
+	docker run -it --rm --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=1 \
+		-v "$(realpath data/):/app/data" \
+		-v "$(realpath models/):/app/models" \
+		"sandbox_go/sandbox_go:0.0.1"
