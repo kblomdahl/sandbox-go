@@ -291,18 +291,20 @@ cdef class Board:
             return 3
 
     cdef int _get_pattern(self, int color, int index) nogil:
-        """ Return the 3x3 pattern around the given `index`, normalized so that
-        the given `color` is the current player. """
+        """ Return the 2-width diamond pattern around the given `index`,
+        normalized so that the given `color` is the current player. """
 
-        cdef int pattern = (self._get_pattern_code(color, _N[index]) << 16) \
-            | (self._get_pattern_code(color, _E[_N[index]]) << 14) \
-            | (self._get_pattern_code(color, _E[index]) << 12) \
-            | (self._get_pattern_code(color, _E[_S[index]]) << 10) \
-            | (self._get_pattern_code(color, _S[index]) << 8) \
-            | (self._get_pattern_code(color, _W[_S[index]]) << 6) \
-            | (self._get_pattern_code(color, _W[index]) << 4) \
-            | (self._get_pattern_code(color, _W[_N[index]]) << 2) \
-            | (self._get_pattern_code(color, index) << 0)
+        cdef int pattern = 0
+
+        pattern |= self._get_pattern_code(color,    _N[index] ) << 16
+        pattern |= self._get_pattern_code(color, _N[_E[index]]) << 14
+        pattern |= self._get_pattern_code(color,    _E[index] ) << 12
+        pattern |= self._get_pattern_code(color, _S[_E[index]]) << 10
+        pattern |= self._get_pattern_code(color,    _S[index] ) <<  8
+        pattern |= self._get_pattern_code(color, _S[_W[index]]) <<  6
+        pattern |= self._get_pattern_code(color,    _W[index] ) <<  4
+        pattern |= self._get_pattern_code(color, _N[_W[index]]) <<  2
+        pattern |= self._get_pattern_code(color,       index  ) <<  0
 
         return pattern
 

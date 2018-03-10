@@ -23,7 +23,7 @@ import sys
 
 PATTERNS = list(sorted(get_all_patterns()))
 
-def c(p):
+def to_ch(p):
     if p == 0:
         return ' '
     elif p == 1:
@@ -33,25 +33,50 @@ def c(p):
     else:
         return '-'
 
+def pad(line, to_length, left):
+    while len(line) < to_length:
+        if left:
+            line = ' ' + line
+        else:
+            line += ' '
+    return line
+
 print('  X  Player   O  Opponent')
 print('')
 
-for pattern in sys.argv[1:]:
-    pattern = PATTERNS[int(pattern)]
+patterns = []
+
+for index in sys.argv[1:]:
+    code = PATTERNS[int(index)]
     parts = [
-        (pattern >> 16) & 0x3,
-        (pattern >> 14) & 0x3,
-        (pattern >> 12) & 0x3,
-        (pattern >> 10) & 0x3,
-        (pattern >>  8) & 0x3,
-        (pattern >>  6) & 0x3,
-        (pattern >>  4) & 0x3,
-        (pattern >>  2) & 0x3,
-        (pattern >>  0) & 0x3
+        (code >> 16) & 0x3,
+        (code >> 14) & 0x3,
+        (code >> 12) & 0x3,
+        (code >> 10) & 0x3,
+        (code >>  8) & 0x3,
+        (code >>  6) & 0x3,
+        (code >>  4) & 0x3,
+        (code >>  2) & 0x3,
+        (code >>  0) & 0x3
     ]
 
-    print('%s:' % pattern)
-    print('%s %s %s' % (c(parts[7]), c(parts[0]), c(parts[1])))
-    print('%s %s %s' % (c(parts[6]), c(parts[8]), c(parts[2])))
-    print('%s %s %s' % (c(parts[5]), c(parts[4]), c(parts[3])))
-    print('')
+    pattern  = '%s\n' % index
+    pattern += '-----\n'
+    pattern += '%s %s %s\n' % (to_ch(parts[7]), to_ch(parts[0]), to_ch(parts[1]))
+    pattern += '%s %s %s\n' % (to_ch(parts[6]), to_ch(parts[8]), to_ch(parts[2]))
+    pattern += '%s %s %s\n' % (to_ch(parts[5]), to_ch(parts[4]), to_ch(parts[3]))
+    patterns += [pattern]
+
+# 
+for i in range(0, len(patterns), 8):
+    slices = patterns[i:i+8]
+
+    for i in range(5):
+        print('| ', end='')
+
+        for pattern in slices:
+            parts = pattern.split('\n')
+
+            print(pad(parts[i], 5, i == 0), end=' | ')
+        print()
+    print()

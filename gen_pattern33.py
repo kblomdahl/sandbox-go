@@ -97,7 +97,6 @@ if __name__ == '__main__':
     # 
     PATTERNS = get_all_patterns()
 
-    print(len(PATTERNS))
     assert len(PATTERNS) == 22665
 
     for i, pattern in enumerate(sorted(PATTERNS)):
