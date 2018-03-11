@@ -23,6 +23,7 @@
 from .rules.board cimport Board
 from .rules.color cimport BLACK, WHITE, opposite
 from .rules.features cimport get_features
+from .rules.features import NUM_FEATURES
 
 import cython
 from libc.stdlib cimport malloc, free, rand, RAND_MAX
@@ -196,7 +197,7 @@ def one(line):
     # this can get fairly expensive
     cdef unsigned char *line_ptr = <unsigned char*>line
     cdef int line_length = len(line)
-    cdef np.ndarray features = np.zeros((5, 361), 'f4')
+    cdef np.ndarray features = np.zeros((NUM_FEATURES, 361), 'f4')
     cdef float[:,:] features_view = features
     cdef int winner = 0, next1_color = 0, next1_index, next2_index
 

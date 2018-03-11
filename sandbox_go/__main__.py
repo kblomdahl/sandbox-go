@@ -18,6 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from sandbox_go.rules.features import NUM_FEATURES
 import sandbox_go.sgf as sgf
 
 import tensorflow as tf
@@ -64,8 +65,7 @@ def prelu(x):
 
 
 def tower(x, mode, params):
-    #y = embedding_layer(x, [22665, params['num_patterns']], 2, name='pattern')
-    y = x
+    y = embedding_layer(x, [22665, params['num_patterns']], 2, name='pattern')
 
     # the start of the tower as described by DeepMind:
     #
@@ -274,7 +274,7 @@ def get_dataset(batch_size):
             )
 
     def _fix_shape(features, value, policy):
-        features = tf.reshape(features, [5, 19, 19])
+        features = tf.reshape(features, [NUM_FEATURES, 19, 19])
         value = tf.reshape(value, [1])
         policy = tf.reshape(policy, [362])
 
