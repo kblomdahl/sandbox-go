@@ -42,24 +42,36 @@ cdef int binary_search(int value) nogil:
 
 
 @cython.boundscheck(False)
-cdef void get_features(Board board, int color, float[:,:] out) nogil:
+cdef void get_features(Board board, int next_color, int next_index, float[:,:] features, float[:,:] policy) nogil:
     """ Returns the input features for the given board state and player """
 
-    cdef float is_black = 1.0 if color == BLACK else 0.0
-    cdef float is_white = 1.0 if color == WHITE else 0.0
-    cdef int other = opposite(color)
-    cdef int x, y, index
+    cdef float is_pass
+    cdef int sx, x, sy, y, index, tile, tindex
 
-    for y in range(19):
-        for x in range(19):
-            index = 19 * y + x
+    for sy in range(7):
+        for sx in range(7):
+            tile = 7 * sy + sx
+            tindex = 0
+            is_pass = 1.0
 
-            out[0, index] = is_black
-            out[1, index] = is_white
-            out[2, index] = <float>binary_search(board._get_pattern(color, index))
+            for y in range(_TILES[sy] - 1, _TILES[sy] + 2):
+                for x in range(_TILES[sx] - 1, _TILES[sx] + 2):
+                    index = 19 * y + x
 
+                    features[tile, tindex] = <float>binary_search(board._get_pattern(next_color, index))
+                    if index == next_index:
+                        policy[tile, tindex] = 1.0
+                        is_pass = 0.0
+
+                    tindex += 1
+
+            policy[tile, 9] = is_pass
 
 # -------- Code Generation --------
+
+cdef int* _TILES = [
+    1, 4, 7, 9, 11, 14, 17
+];
 
 cdef int* _PATTERN = [
          0,      1,      2,      4,      5,      6,      8,      9,     10,

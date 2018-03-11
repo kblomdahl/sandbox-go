@@ -197,20 +197,18 @@ def one(line):
     # this can get fairly expensive
     cdef unsigned char *line_ptr = <unsigned char*>line
     cdef int line_length = len(line)
-    cdef np.ndarray features = np.zeros((NUM_FEATURES, 361), 'f4')
+    cdef np.ndarray features = np.zeros((49, 9), 'f4')
+    cdef np.ndarray policy = np.zeros((49, 10), 'f4')
     cdef float[:,:] features_view = features
+    cdef float[:,:] policy_view = policy
     cdef int winner = 0, next1_color = 0, next1_index, next2_index
 
     with nogil:
         if _one(line_ptr, line_length, board, &winner, &next1_color, &next1_index, &next2_index):
-            get_features(board, next1_color, features_view)
+            get_features(board, next1_color, next1_index, features_view, policy_view)
 
     # allocate the appropriate NumPy arrays to contain the policies and features
     if winner == 0 or next1_color == 0:
         raise ValueError
     else:
-        value = np.asarray([1.0 if winner == next1_color else -1.0], 'f4')
-        policy = np.zeros((362,), 'f4')
-        policy[next1_index] = 1.0
-
-        return (features, value, policy)
+        return (features, policy)

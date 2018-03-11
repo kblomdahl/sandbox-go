@@ -27,297 +27,79 @@ import numpy as np
 from datetime import datetime
 from glob import glob
 
-def embedding_layer(x, shape, channel, name=None):
-    with tf.variable_scope(name, 'embedding'):
-        embeddings = tf.get_variable('embeddings', shape)
-
-        # extract and flatten the channel that we are going to replace with an
-        # embedding
-        x_unstack = tf.unstack(x, axis=1)  # unstack channels
-        x_ids = tf.cast(tf.reshape(x_unstack[channel], [-1]), tf.int32)
-
-        x_pattern = tf.nn.embedding_lookup(
-            embeddings,
-            x_ids,
-            max_norm=shape[1]
-        )
-
-        # since the embedding is at the last dimension, and we are using the NCHW
-        # order, we need to transpose the embedded tensor
-        x_pattern = tf.reshape(x_pattern, [-1, 19, 19, shape[1]])
-        x_pattern = tf.transpose(x_pattern, [0, 3, 1, 2])
-
-        # replace the channel in the input vector with the embeddings
-        x_pattern_unstack = tf.unstack(x_pattern, axis=1)
-        x_head = x_unstack[:channel]
-        x_tail = x_unstack[(channel+1):]
-
-        return tf.stack(x_head + x_pattern_unstack + x_tail, axis=1)
-
-
-def prelu(x):
-    """ Parameterised relu. """
-
-    with tf.variable_scope('prelu'):
-        alpha = tf.get_variable('alpha')
-
-        return tf.nn.leaky_relu(x, alpha)
-
-
 def tower(x, mode, params):
-    y = embedding_layer(x, [22665, params['num_patterns']], 2, name='pattern')
+    with tf.variable_scope('mini'):
+        p_embedding = tf.get_variable('embeddings', [22665, params['num_patterns']])
+        x_ids = tf.cast(tf.reshape(x, [-1]), tf.int32)
 
-    # the start of the tower as described by DeepMind:
-    #
-    # 1. A convolution of 256 filters of kernel size 3×3 with stride 1
-    # 2. Batch normalization
-    # 3. A rectifier nonlinearity
-    #
-    y = tf.layers.conv2d(
-        y,
-        params['num_channels'],  # filters
-        3,  # kernel_size
-        1,  # strides
-        'same',  # padding
-        'channels_first',  # data_format
-        use_bias=True,
-        bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.glorot_normal_initializer(),
-        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
-    )
+    y = tf.nn.embedding_lookup(p_embedding, x_ids, max_norm=params['num_patterns'])
+    y = tf.reshape(y, [-1, 9 * params['num_patterns']])
 
-    y = tf.layers.batch_normalization(
-        y,
-        axis=1,  # data_format
-        center=False,
-        scale=False,
-        fused=True,
-        training=(mode == tf.estimator.ModeKeys.TRAIN),
-        trainable=False
-    )
-
-    y = tf.nn.relu(y)
-
-    # The residual blocks as described by DeepMind:
-    #
-    #   1. A convolution of 256 filters of kernel size 3×3 with stride 1
-    #   2. Batch normalization
-    #   3. A rectifier nonlinearity
-    #   4. A convolution of 256 filters of kernel size 3×3 with stride 1
-    #   5. Batch normalization
-    #   6. A skip connection that adds the input to the block
-    #   7. A rectifier nonlinearity
-    #
-    for _ in range(params['num_blocks']):
-        z = tf.layers.conv2d(
-            y,
-            params['num_channels'],  # filters
-            3,  # kernel_size
-            1,  # strides
-            'same',  # padding
-            'channels_first',  # data_format
-            use_bias=True,
-            bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-            kernel_initializer=tf.glorot_normal_initializer(),
-            kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
-        )
-
-        z = tf.layers.batch_normalization(
-            z,
-            axis=1,  # data_format
-            center=False,
-            scale=False,
-            fused=True,
-            training=(mode == tf.estimator.ModeKeys.TRAIN),
-            trainable=False
-        )
-
-        z = tf.nn.relu(z)
-
-        z = tf.layers.conv2d(
-            z,
-            params['num_channels'],  # filters
-            3,  # kernel_size
-            1,  # strides
-            'same',  # padding
-            'channels_first',  # data_format
-            use_bias=True,
-            bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-            kernel_initializer=tf.glorot_normal_initializer(),
-            kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
-        )
-
-        z = tf.layers.batch_normalization(
-            z,
-            axis=1,  # data_format
-            center=False,
-            scale=False,
-            fused=True,
-            training=(mode == tf.estimator.ModeKeys.TRAIN),
-            trainable=False
-        )
-
-        y = tf.nn.relu(z + y)
-        del z
-
-    # The policy head as described by DeepMind:
-    #
-    #   1. A convolution of 2 filters of kernel size 1×1 with stride 1
-    #   2. Batch normalization
-    #   3. A rectifier nonlinearity
-    #   4. A fully connected linear layer that outputs a vector of
-    #      size 19² + 1 = 362.
-    #
-    p = tf.layers.conv2d(
-        y,
-        2,  # filters
-        1,  # kernel_size
-        1,  # strides
-        'same',  # padding
-        'channels_first',  # data_format
-        use_bias=True,
-        bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.glorot_normal_initializer(),
-        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
-    )
-
-    p = tf.layers.batch_normalization(
-        p,
-        axis=1,  # data_format
-        center=False,
-        scale=False,
-        fused=True,
-        training=(mode == tf.estimator.ModeKeys.TRAIN),
-        trainable=False
-    )
-
-    p = tf.nn.relu(p)
-
-    p = tf.layers.dense(
-        tf.reshape(p, [-1, 722]),  # inputs
-        362,  # units
-        use_bias=True,
-        bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
-        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
-    )
-
-    # The value head as described by DeepMind:
-    #
-    #   1. A convolution of 1 filter of kernel size 1×1 with stride 1
-    #   2. Batch normalization
-    #   3. A rectifier nonlinearity
-    #   4. A fully connected linear layer to a hidden layer of size 256
-    #   5. A rectifier nonlinearity
-    #   6. A fully connected linear layer to a scalar
-    #   7. A tanh nonlinearity outputting a scalar in the range [−1, 1]
-    #
-    v = tf.layers.conv2d(
+    y = tf.layers.dense(
         y,  # inputs
-        1,  # filters
-        1,  # kernel_size
-        1,  # strides
-        'same',  # padding
-        'channels_first',  # data_format
-        use_bias=True,
-        bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.glorot_normal_initializer(),
-        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
+        10,  # units
+        use_bias=False,
+        kernel_initializer=tf.orthogonal_initializer()
     )
 
-    v = tf.layers.batch_normalization(
-        v,
-        axis=1,  # data_format
-        center=False,
-        scale=False,
-        fused=True,
-        training=(mode == tf.estimator.ModeKeys.TRAIN),
-        trainable=False
-    )
-
-    v = tf.nn.relu(v)
-
-    v = tf.layers.dense(
-        tf.reshape(v, [-1, 361]),  # inputs
-        256,  # units
-        use_bias=True,
-        bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
-        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
-    )
-
-    v = tf.nn.relu(v)
-
-    v = tf.layers.dense(
-        v,  # inputs
-        1,  # units
-        use_bias=True,
-        bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
-        kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
-    )
-
-    v = tf.nn.tanh(v)
-
-    return v, p
+    return y
 
 
 def get_dataset(batch_size):
     def _parse_sgf(line):
         try:
-            return sgf.one(line)
+            features, policy =  sgf.one(line)
+
+            return features, policy
         except ValueError:  # bad game
             return (
-                np.asarray([], 'f4'),  # features
-                np.asarray([0.0], 'f4'),  # value
-                np.asarray([], 'f4'),  # policy
+                np.zeros((49, 9), 'f4'),
+                np.zeros((49, 10), 'f4'),
             )
 
-    def _fix_shape(features, value, policy):
-        features = tf.reshape(features, [NUM_FEATURES, 19, 19])
-        value = tf.reshape(value, [1])
-        policy = tf.reshape(policy, [362])
+    def _unstack(features, policy):
+        features = tf.reshape(features, [49, 9])
+        policy = tf.reshape(policy, [49, 10])
 
-        return features, value, policy
+        return tf.data.Dataset.from_tensor_slices((features, policy))
 
     dataset = tf.data.TextLineDataset(glob('data/*.sgf'))
     dataset = dataset.repeat()
     dataset = dataset.map(lambda text: tuple(tf.py_func(
         _parse_sgf,
         [text],
-        [tf.float32, tf.float32, tf.float32]
+        [tf.float32, tf.float32]
     )))
-    dataset = dataset.filter(lambda _f, value, _p1: tf.not_equal(value, 0.0))
-    dataset = dataset.map(_fix_shape)
-    dataset = dataset.shuffle(384000)
+    dataset = dataset.flat_map(_unstack)
+    dataset = dataset.filter(lambda features, policy: tf.reduce_any(tf.not_equal(policy, 0.0)))
+    dataset = dataset.shuffle(1176000)
     dataset = dataset.batch(batch_size)
 
     return dataset
 
 
 def input_fn(batch_size):
-    return get_dataset(batch_size).map(lambda features, value, policy:
-        (features, {'value': value, 'policy': policy})
+    return get_dataset(batch_size).map(lambda features, policy:
+        (features, {'policy': policy})
     )
 
 
 def model_fn(features, labels, mode, params):
-    value_hat, policy_hat = tower(features, mode, params)
+    policy_hat = tower(features, mode, params)
+    policy_hot = tf.argmax(labels['policy'], axis=1)
 
-    # determine the loss
-    loss_l2 = tf.losses.get_regularization_loss()
-    loss_value =  tf.losses.mean_squared_error(
-        labels['value'],
-        value_hat,
-        weights=1.0
-    )
-    loss_policy = tf.losses.softmax_cross_entropy(
+    # determine the loss, we set the weight of the `pass` move much lower than
+    # real moves here to prevent the engine from just always predicting `pass`
+    # and being happy with it.
+    loss = tf.losses.softmax_cross_entropy(
         labels['policy'],
         policy_hat,
-        weights=1.0
+        weights=tf.where(
+            tf.equal(policy_hot, 9),
+            tf.constant(0.0204, shape=(params['batch_size'],)),  # pass
+            tf.constant(1.0, shape=(params['batch_size'],))      # not pass
+        )
     )
-
-    loss = loss_policy + loss_value + 8e-4 * loss_l2
 
     # setup the optimizer
     global_step = tf.train.get_global_step()
@@ -330,23 +112,19 @@ def model_fn(features, labels, mode, params):
 
     # setup some nice looking metric to look at
     if mode == tf.estimator.ModeKeys.TRAIN:
-        policy_hot = tf.argmax(labels['policy'], axis=1)
-
         tf.summary.scalar('accuracy/policy_1', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=1), tf.float32)))
         tf.summary.scalar('accuracy/policy_3', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=3), tf.float32)))
         tf.summary.scalar('accuracy/policy_5', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=5), tf.float32)))
-        tf.summary.scalar('accuracy/value', tf.reduce_mean(tf.cast(tf.equal(tf.sign(labels['value']), tf.sign(value_hat)), tf.float32)))
-
-        tf.summary.scalar('loss/policy', loss_policy)
-        tf.summary.scalar('loss/value', loss_value)
-        tf.summary.scalar('loss/l2', loss_l2)
-
+        tf.summary.scalar('loss', loss)
         tf.summary.scalar('learning_rate', learning_rate)
+
+        tf.summary.histogram('policy_hot', policy_hot)
+        tf.summary.histogram('policy_hat', policy_hat)
 
     # put it all together into a specification
     return tf.estimator.EstimatorSpec(
         mode,
-        {'value': value_hat, 'policy': tf.nn.softmax(policy_hat)},
+        {'policy': tf.nn.softmax(policy_hat)},
         loss,
         train_op,
         {},  # eval_metric_ops
@@ -355,7 +133,7 @@ def model_fn(features, labels, mode, params):
 # reduce the amount of spam that we're getting to the console
 tf.logging.set_verbosity(tf.logging.WARN)
 
-batch_size = 256
+batch_size = 16392
 config = tf.estimator.RunConfig(
     session_config = tf.ConfigProto(
         gpu_options = tf.GPUOptions(
@@ -368,6 +146,6 @@ nn = tf.estimator.Estimator(
     config=config,
     model_fn=model_fn,
     model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
-    params={'num_channels': 128, 'num_blocks': 9, 'num_patterns': 32, 'batch_size': batch_size}
+    params={'num_patterns': 2, 'batch_size': batch_size}
 )
 nn.train(input_fn=lambda: input_fn(batch_size), steps=26214400/batch_size)
