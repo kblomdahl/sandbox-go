@@ -356,7 +356,16 @@ def model_fn(features, labels, mode, params):
 tf.logging.set_verbosity(tf.logging.WARN)
 
 batch_size = 256
+config = tf.estimator.RunConfig(
+    session_config = tf.ConfigProto(
+        gpu_options = tf.GPUOptions(
+            allow_growth = True
+        )
+    )
+)
+
 nn = tf.estimator.Estimator(
+    config=config,
     model_fn=model_fn,
     model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
     params={'num_channels': 128, 'num_blocks': 9, 'num_patterns': 32, 'batch_size': batch_size}
