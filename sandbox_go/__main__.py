@@ -85,6 +85,7 @@ def tower(x, mode, params):
 
     y = tf.layers.batch_normalization(
         y,
+        axis=1,  # data_format
         scale=False,
         fused=True,
         training=(mode == tf.estimator.ModeKeys.TRAIN),
@@ -117,6 +118,7 @@ def tower(x, mode, params):
 
         z = tf.layers.batch_normalization(
             z,
+            axis=1,  # data_format
             scale=False,
             fused=True,
             training=(mode == tf.estimator.ModeKeys.TRAIN),
@@ -138,6 +140,7 @@ def tower(x, mode, params):
 
         z = tf.layers.batch_normalization(
             z,
+            axis=1,  # data_format
             scale=False,
             fused=True,
             training=(mode == tf.estimator.ModeKeys.TRAIN),
@@ -168,6 +171,7 @@ def tower(x, mode, params):
 
     p = tf.layers.batch_normalization(
         p,
+        axis=1,  # data_format
         scale=False,
         fused=True,
         training=(mode == tf.estimator.ModeKeys.TRAIN),
@@ -204,6 +208,7 @@ def tower(x, mode, params):
 
     q = tf.layers.batch_normalization(
         q,
+        axis=1,  # data_format
         scale=False,
         fused=True,
         training=(mode == tf.estimator.ModeKeys.TRAIN),
@@ -243,6 +248,7 @@ def tower(x, mode, params):
 
     v = tf.layers.batch_normalization(
         v,
+        axis=1,  # data_format
         scale=False,
         fused=True,
         training=(mode == tf.estimator.ModeKeys.TRAIN),
