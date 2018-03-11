@@ -64,7 +64,8 @@ def prelu(x):
 
 
 def tower(x, mode, params):
-    y = embedding_layer(x, [22665, params['num_patterns']], 2, name='pattern')
+    #y = embedding_layer(x, [22665, params['num_patterns']], 2, name='pattern')
+    y = x
 
     # the start of the tower as described by DeepMind:
     #
