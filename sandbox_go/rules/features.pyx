@@ -40,11 +40,11 @@ cdef int binary_search(int value) nogil:
 
 
 @cython.boundscheck(False)
-cdef void get_features(Board board, int color, unsigned short[:,:] out) nogil:
+cdef void get_features(Board board, int color, float[:,:] out) nogil:
     """ Returns the input features for the given board state and player """
 
-    cdef unsigned short is_black = 0x003c if color == BLACK else 0
-    cdef unsigned short is_white = 0x003c if color == WHITE else 0
+    cdef float is_black = 1.0 if color == BLACK else 0.0
+    cdef float is_white = 1.0 if color == WHITE else 0.0
     cdef int other = opposite(color)
     cdef int x, y, index
 
@@ -57,11 +57,11 @@ cdef void get_features(Board board, int color, unsigned short[:,:] out) nogil:
             #out[2, index] = <float>binary_search(board._get_pattern(color, index))
 
             if board.vertices[index] == color:
-                out[2, index] = 0x003c
+                out[2, index] = 1.0
             elif board.vertices[index] == other:
-                out[3, index] = 0x003c
+                out[3, index] = 1.0
             else:
-                out[4, index] = 0x003c
+                out[4, index] = 1.0
 
 
 # -------- Code Generation --------
