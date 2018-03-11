@@ -22,4 +22,4 @@ from .board cimport Board
 from .color cimport BLACK, WHITE, opposite
 cimport numpy as np
 
-cdef void get_features(Board board, int color, float[:,:] out) nogil
+cdef void get_features(Board board, int color, unsigned short[:,:] out) nogil

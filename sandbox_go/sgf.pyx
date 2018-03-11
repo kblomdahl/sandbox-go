@@ -196,8 +196,8 @@ def one(line):
     # this can get fairly expensive
     cdef unsigned char *line_ptr = <unsigned char*>line
     cdef int line_length = len(line)
-    cdef np.ndarray features = np.zeros((5, 361), 'f4')
-    cdef float[:,:] features_view = features
+    cdef np.ndarray features = np.zeros((5, 361), 'f2')
+    cdef unsigned short[:,:] features_view = features
     cdef int winner = 0, next1_color = 0, next1_index, next2_index
 
     with nogil:
@@ -208,8 +208,8 @@ def one(line):
     if winner == 0 or next1_color == 0:
         raise ValueError
     else:
-        value = np.asarray([1.0 if winner == next1_color else -1.0], 'f4')
-        policy = np.zeros((362,), 'f4')
+        value = np.asarray([1.0 if winner == next1_color else -1.0], 'f2')
+        policy = np.zeros((362,), 'f2')
         policy[next1_index] = 1.0
 
         return (features, value, policy)

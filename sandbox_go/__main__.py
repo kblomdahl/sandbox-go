@@ -28,7 +28,7 @@ from glob import glob
 
 def embedding_layer(x, shape, channel, name=None):
     with tf.variable_scope(name, 'embedding'):
-        embeddings = tf.get_variable('embeddings', shape)
+        embeddings = tf.get_variable('embeddings', shape, dtype=x.dtype)
 
         # extract and flatten the channel that we are going to replace with an
         # embedding
@@ -81,7 +81,7 @@ def tower(x, mode, params):
         'channels_first',  # data_format
         use_bias=True,
         bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
+        kernel_initializer=tf.glorot_normal_initializer(),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
@@ -117,7 +117,7 @@ def tower(x, mode, params):
             'channels_first',  # data_format
             use_bias=True,
             bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-            kernel_initializer=tf.orthogonal_initializer(),
+            kernel_initializer=tf.glorot_normal_initializer(),
             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
         )
 
@@ -142,7 +142,7 @@ def tower(x, mode, params):
             'channels_first',  # data_format
             use_bias=True,
             bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-            kernel_initializer=tf.orthogonal_initializer(),
+            kernel_initializer=tf.glorot_normal_initializer(),
             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
         )
 
@@ -176,7 +176,7 @@ def tower(x, mode, params):
         'channels_first',  # data_format
         use_bias=True,
         bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
+        kernel_initializer=tf.glorot_normal_initializer(),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
@@ -197,7 +197,7 @@ def tower(x, mode, params):
         362,  # units
         use_bias=True,
         bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
+        kernel_initializer=tf.glorot_normal_initializer(),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
@@ -220,7 +220,7 @@ def tower(x, mode, params):
         'channels_first',  # data_format
         use_bias=True,
         bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
+        kernel_initializer=tf.glorot_normal_initializer(),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
@@ -241,7 +241,7 @@ def tower(x, mode, params):
         256,  # units
         use_bias=True,
         bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
+        kernel_initializer=tf.glorot_normal_initializer(),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
@@ -252,7 +252,7 @@ def tower(x, mode, params):
         1,  # units
         use_bias=True,
         bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
+        kernel_initializer=tf.glorot_normal_initializer(),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
@@ -267,9 +267,9 @@ def get_dataset(batch_size):
             return sgf.one(line)
         except ValueError:  # bad game
             return (
-                np.asarray([], 'f4'),  # features
-                np.asarray([0.0], 'f4'),  # value
-                np.asarray([], 'f4'),  # policy
+                np.asarray([], 'f2'),  # features
+                np.asarray([0.0], 'f2'),  # value
+                np.asarray([], 'f2'),  # policy
             )
 
     def _fix_shape(features, value, policy):
@@ -284,7 +284,7 @@ def get_dataset(batch_size):
     dataset = dataset.map(lambda text: tuple(tf.py_func(
         _parse_sgf,
         [text],
-        [tf.float32, tf.float32, tf.float32]
+        [tf.float16, tf.float16, tf.float16]
     )))
     dataset = dataset.filter(lambda _f, value, _p1: tf.not_equal(value, 0.0))
     dataset = dataset.map(_fix_shape)
@@ -304,17 +304,17 @@ def model_fn(features, labels, mode, params):
     value_hat, policy_hat = tower(features, mode, params)
 
     # determine the loss
-    loss_l2 = tf.losses.get_regularization_loss()
-    loss_value =  tf.losses.mean_squared_error(
+    loss_l2 = tf.cast(tf.losses.get_regularization_loss(), tf.float32)
+    loss_value =  tf.cast(tf.losses.mean_squared_error(
         labels['value'],
         value_hat,
         weights=1.0
-    )
-    loss_policy = tf.losses.softmax_cross_entropy(
+    ), tf.float32)
+    loss_policy = tf.cast(tf.losses.softmax_cross_entropy(
         labels['policy'],
         policy_hat,
         weights=1.0
-    )
+    ), tf.float32)
 
     loss = loss_policy + loss_value + 8e-4 * loss_l2
 
@@ -330,6 +330,7 @@ def model_fn(features, labels, mode, params):
     # setup some nice looking metric to look at
     if mode == tf.estimator.ModeKeys.TRAIN:
         policy_hot = tf.argmax(labels['policy'], axis=1)
+        policy_hat = tf.cast(policy_hat, tf.float32)
 
         tf.summary.scalar('accuracy/policy_1', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=1), tf.float32)))
         tf.summary.scalar('accuracy/policy_3', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=3), tf.float32)))
