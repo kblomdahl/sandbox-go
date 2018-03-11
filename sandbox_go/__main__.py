@@ -27,6 +27,8 @@ import numpy as np
 from datetime import datetime
 from glob import glob
 
+TILES = [1, 4, 7, 9, 11, 14, 17]
+
 def tower(x, mode, params):
     with tf.variable_scope('mini'):
         p_embedding = tf.get_variable('embeddings', [22665, params['num_patterns']])
@@ -42,7 +44,39 @@ def tower(x, mode, params):
         kernel_initializer=tf.orthogonal_initializer()
     )
 
-    return y
+    # re-construct all of the sub-tiles into the full board, by first figuring
+    # out what tiles should go to what index in the policy, we then either:
+    #
+    # - average if two tiles overlap
+    # - minimum for the pass move
+    #
+    policy_indices = [None] * 361
+    policy_slices = [None] * 362
+    y = tf.reshape(y, [-1, 49, 10])
+
+    for sy in range(7):
+        for sx in range(7):
+            tile = 7 * sy + sx
+            tindex = 0
+
+            for yy in range(TILES[sy] - 1, TILES[sy] + 2):
+                for xx in range(TILES[sx] - 1, TILES[sx] + 2):
+                    index = 19 * yy + xx
+
+                    if not policy_indices[index]:
+                        policy_indices[index] = []
+
+                    policy_indices[index].append(y[:, tile, tindex])
+                    tindex += 1
+
+    for i in range(361):
+        policy_slices[i] = tf.reduce_mean(policy_indices[i], axis=0)
+    policy_slices[361] = tf.reduce_min(y[:,:,9], axis=1)
+
+    for i in range(362):
+        policy_slices[i] = tf.reshape(policy_slices[i], [-1, 1])
+
+    return tf.concat(policy_slices, axis=1)
 
 
 def get_dataset(batch_size):
@@ -54,14 +88,8 @@ def get_dataset(batch_size):
         except ValueError:  # bad game
             return (
                 np.zeros((49, 9), 'f4'),
-                np.zeros((49, 10), 'f4'),
+                np.zeros((362,), 'f4'),
             )
-
-    def _unstack(features, policy):
-        features = tf.reshape(features, [49, 9])
-        policy = tf.reshape(policy, [49, 10])
-
-        return tf.data.Dataset.from_tensor_slices((features, policy))
 
     dataset = tf.data.TextLineDataset(glob('data/*.sgf'))
     dataset = dataset.repeat()
@@ -70,7 +98,6 @@ def get_dataset(batch_size):
         [text],
         [tf.float32, tf.float32]
     )))
-    dataset = dataset.flat_map(_unstack)
     dataset = dataset.filter(lambda features, policy: tf.reduce_any(tf.not_equal(policy, 0.0)))
     dataset = dataset.shuffle(1176000)
     dataset = dataset.batch(batch_size)
@@ -93,12 +120,7 @@ def model_fn(features, labels, mode, params):
     # and being happy with it.
     loss = tf.losses.softmax_cross_entropy(
         labels['policy'],
-        policy_hat,
-        weights=tf.where(
-            tf.equal(policy_hot, 9),
-            tf.constant(0.0204, shape=(params['batch_size'],)),  # pass
-            tf.constant(1.0, shape=(params['batch_size'],))      # not pass
-        )
+        policy_hat
     )
 
     # setup the optimizer
@@ -133,7 +155,7 @@ def model_fn(features, labels, mode, params):
 # reduce the amount of spam that we're getting to the console
 tf.logging.set_verbosity(tf.logging.WARN)
 
-batch_size = 16392
+batch_size = 512
 config = tf.estimator.RunConfig(
     session_config = tf.ConfigProto(
         gpu_options = tf.GPUOptions(

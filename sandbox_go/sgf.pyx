@@ -198,9 +198,9 @@ def one(line):
     cdef unsigned char *line_ptr = <unsigned char*>line
     cdef int line_length = len(line)
     cdef np.ndarray features = np.zeros((49, 9), 'f4')
-    cdef np.ndarray policy = np.zeros((49, 10), 'f4')
+    cdef np.ndarray policy = np.zeros((362,), 'f4')
     cdef float[:,:] features_view = features
-    cdef float[:,:] policy_view = policy
+    cdef float[:] policy_view = policy
     cdef int winner = 0, next1_color = 0, next1_index, next2_index
 
     with nogil:
