@@ -82,7 +82,7 @@ def tower(x, mode, params):
         'channels_first',  # data_format
         use_bias=True,
         bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
+        kernel_initializer=tf.glorot_normal_initializer(),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
@@ -118,7 +118,7 @@ def tower(x, mode, params):
             'channels_first',  # data_format
             use_bias=True,
             bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-            kernel_initializer=tf.orthogonal_initializer(),
+            kernel_initializer=tf.glorot_normal_initializer(),
             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
         )
 
@@ -143,7 +143,7 @@ def tower(x, mode, params):
             'channels_first',  # data_format
             use_bias=True,
             bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-            kernel_initializer=tf.orthogonal_initializer(),
+            kernel_initializer=tf.glorot_normal_initializer(),
             kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
         )
 
@@ -177,7 +177,7 @@ def tower(x, mode, params):
         'channels_first',  # data_format
         use_bias=True,
         bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
+        kernel_initializer=tf.glorot_normal_initializer(),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
@@ -221,7 +221,7 @@ def tower(x, mode, params):
         'channels_first',  # data_format
         use_bias=True,
         bias_initializer=tf.random_uniform_initializer(-1.0, 1.0),
-        kernel_initializer=tf.orthogonal_initializer(),
+        kernel_initializer=tf.glorot_normal_initializer(),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=1.0)
     )
 
