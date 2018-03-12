@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from sandbox_go.rules.features import NUM_FEATURES
+from sandbox_go.rules.features import NUM_FEATURES, pattern_embedding_initializer
 import sandbox_go.sgf as sgf
 
 import tensorflow as tf
@@ -41,8 +41,7 @@ def embedding_layer(x, shape, channel, name=None):
 
         x_pattern = tf.nn.embedding_lookup(
             embeddings,
-            x_ids,
-            max_norm=shape[1]
+            x_ids
         )
 
         # since the embedding is at the last dimension, and we are using the NCHW
@@ -69,11 +68,11 @@ def prelu(x):
 class EmbeddingLayer:
     """ Embeddings layer. """
 
-    def __init__(self, channel, shape):
+    def __init__(self, channel, shape, initializer=None):
         self._channel = channel
         self._shape = shape
 
-        self._embedding = tf.get_variable('embeddings', shape)
+        self._embedding = tf.get_variable('embeddings', shape, initializer=initializer)
 
     def __call__(self, x, mode):
         # extract and flatten the channel that we are going to replace with an
@@ -270,9 +269,12 @@ class Tower:
         glorot_op = tf.glorot_normal_initializer()
         num_blocks = params['num_blocks']
         num_channels = params['num_channels']
-        num_inputs = NUM_FEATURES
+        num_patterns = params['num_patterns']
+        num_inputs = (NUM_FEATURES - 1) \
+            + num_patterns
 
         with tf.variable_scope('01_upsample'):
+            self._embedding = EmbeddingLayer(2, [22665, num_patterns], initializer=pattern_embedding_initializer)
             self._upsample = tf.get_variable('weights', (3, 3, num_inputs, num_channels), tf.float32, glorot_op)
             self._bn = BatchNorm(num_channels)
 
@@ -291,7 +293,8 @@ class Tower:
             self._value = ValueHead(params)
 
     def __call__(self, x, mode):
-        y = tf.nn.conv2d(x, self._upsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
+        y = self._embedding(x, mode)
+        y = tf.nn.conv2d(y, self._upsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
         y = self._bn(y, mode)
         y = tf.nn.relu(y)
 
@@ -422,7 +425,7 @@ config = tf.estimator.RunConfig(
 nn = tf.estimator.Estimator(
     config=config,
     model_fn=model_fn,
-    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
-    params={'num_channels': 128, 'num_blocks': 9}
+    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '-p32/',
+    params={'num_channels': 128, 'num_patterns': 32, 'num_blocks': 9}
 )
 nn.train(input_fn=input_fn, steps=MAX_STEPS//BATCH_SIZE)
