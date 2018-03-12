@@ -126,7 +126,7 @@ def model_fn(features, labels, mode, params):
     # setup the optimizer
     global_step = tf.train.get_global_step()
     learning_rate = tf.train.exponential_decay(1e-1, global_step, (26214400 / params['batch_size']) / 256, 0.96)
-    optimizer = tf.train.MomentumOptimizer(0.1, learning_rate, use_nesterov=True)
+    optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
     with tf.control_dependencies(update_ops):
