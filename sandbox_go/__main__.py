@@ -347,7 +347,12 @@ def model_fn(features, labels, mode, params):
     tower = Tower(params)
     value_hat, policy_hat = tower(features, mode)
 
-    # determine the loss
+    # determine the loss for each of the components
+    #
+    # - L2 regularization
+    # - Value head
+    # - Policy head
+    #
     loss_l2 = tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
     loss_value = tf.reduce_mean(tf.squared_difference(
         tf.stop_gradient(labels['value']),
@@ -360,13 +365,24 @@ def model_fn(features, labels, mode, params):
 
     loss = loss_policy + loss_value + 8e-4 * loss_l2
 
-    # setup the optimizer
+    # setup the optimizer to use a constant learning rate of `0.1` for the
+    # first 30% of the steps, then use an exponential decay. This is similar to
+    # cosine decay, and has proven critical to the value head converging at
+    # all.
     global_step = tf.train.get_global_step()
-    learning_rate = tf.train.exponential_decay(
-        1e-1,
-        global_step,
-        (MAX_STEPS//BATCH_SIZE) / 200,
+    learning_steps = MAX_STEPS//BATCH_SIZE
+    learning_rate_threshold = int(0.3 * MAX_STEPS//BATCH_SIZE)
+    learning_rate_exp = tf.train.exponential_decay(
+        0.1,
+        global_step - learning_rate_threshold,
+        (learning_steps - learning_rate_threshold) / 200,
         0.96
+    )
+
+    learning_rate = tf.train.piecewise_constant(
+        global_step,
+        [learning_rate_threshold],
+        [0.1, learning_rate_exp]
     )
     optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
