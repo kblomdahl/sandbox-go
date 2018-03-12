@@ -27,6 +27,9 @@ import numpy as np
 from datetime import datetime
 from glob import glob
 
+MAX_STEPS = 52428800  # the total number of examples to train over
+BATCH_SIZE = 512  # the number of examples per batch
+
 def embedding_layer(x, shape, channel, name=None):
     with tf.variable_scope(name, 'embedding'):
         embeddings = tf.get_variable('embeddings', shape)
@@ -267,11 +270,9 @@ class Tower:
         glorot_op = tf.glorot_normal_initializer()
         num_blocks = params['num_blocks']
         num_channels = params['num_channels']
-        num_patterns = params['num_patterns']
         num_inputs = NUM_FEATURES
 
         with tf.variable_scope('01_upsample'):
-            #self._embedding = EmbeddingLayer(2, [22665, num_patterns])
             self._upsample = tf.get_variable('weights', (3, 3, num_inputs, num_channels), tf.float32, glorot_op)
             self._bn = BatchNorm(num_channels)
 
@@ -290,7 +291,6 @@ class Tower:
             self._value = ValueHead(params)
 
     def __call__(self, x, mode):
-        #y = self._embedding(x, mode)
         y = tf.nn.conv2d(x, self._upsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
         y = self._bn(y, mode)
         y = tf.nn.relu(y)
@@ -304,7 +304,7 @@ class Tower:
         return v, p
 
 
-def get_dataset(batch_size):
+def get_dataset():
     def _parse_sgf(line):
         try:
             return sgf.one(line)
@@ -332,13 +332,13 @@ def get_dataset(batch_size):
     dataset = dataset.filter(lambda _f, value, _p1: tf.not_equal(value, 0.0))
     dataset = dataset.map(_fix_shape)
     dataset = dataset.shuffle(384000)
-    dataset = dataset.batch(batch_size)
+    dataset = dataset.batch(BATCH_SIZE)
 
     return dataset
 
 
-def input_fn(batch_size):
-    return get_dataset(batch_size).map(lambda features, value, policy:
+def input_fn():
+    return get_dataset().map(lambda features, value, policy:
         (features, {'value': value, 'policy': policy})
     )
 
@@ -362,7 +362,12 @@ def model_fn(features, labels, mode, params):
 
     # setup the optimizer
     global_step = tf.train.get_global_step()
-    learning_rate = tf.train.exponential_decay(1e-1, global_step, (26214400 / params['batch_size']) / 256, 0.96)
+    learning_rate = tf.train.exponential_decay(
+        1e-1,
+        global_step,
+        (MAX_STEPS//BATCH_SIZE) / 200,
+        0.96
+    )
     optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
@@ -373,10 +378,20 @@ def model_fn(features, labels, mode, params):
     if mode == tf.estimator.ModeKeys.TRAIN:
         policy_hot = tf.argmax(labels['policy'], axis=1)
 
-        tf.summary.scalar('accuracy/policy_1', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=1), tf.float32)))
-        tf.summary.scalar('accuracy/policy_3', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=3), tf.float32)))
-        tf.summary.scalar('accuracy/policy_5', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=5), tf.float32)))
-        tf.summary.scalar('accuracy/value', tf.reduce_mean(tf.cast(tf.equal(tf.sign(labels['value']), tf.sign(value_hat)), tf.float32)))
+        def _in_top_k(k):
+            in_top_k = tf.nn.in_top_k(policy_hat, policy_hot, k=k)
+
+            return tf.reduce_mean(tf.cast(in_top_k, tf.float32))
+
+        def _sign_equal():
+            sign_equal = tf.equal(tf.sign(labels['value']), tf.sign(value_hat))
+
+            return tf.reduce_mean(tf.cast(sign_equal, tf.float32))
+
+        tf.summary.scalar('accuracy/policy_1', _in_top_k(1))
+        tf.summary.scalar('accuracy/policy_3', _in_top_k(3))
+        tf.summary.scalar('accuracy/policy_5', _in_top_k(5))
+        tf.summary.scalar('accuracy/value', _sign_equal())
 
         tf.summary.scalar('loss/policy', loss_policy)
         tf.summary.scalar('loss/value', loss_value)
@@ -396,7 +411,6 @@ def model_fn(features, labels, mode, params):
 # reduce the amount of spam that we're getting to the console
 tf.logging.set_verbosity(tf.logging.WARN)
 
-batch_size = 256
 config = tf.estimator.RunConfig(
     session_config = tf.ConfigProto(
         gpu_options = tf.GPUOptions(
@@ -409,6 +423,6 @@ nn = tf.estimator.Estimator(
     config=config,
     model_fn=model_fn,
     model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
-    params={'num_channels': 128, 'num_blocks': 9, 'num_patterns': 32, 'batch_size': batch_size}
+    params={'num_channels': 128, 'num_blocks': 9}
 )
-nn.train(input_fn=lambda: input_fn(batch_size), steps=26214400/batch_size)
+nn.train(input_fn=input_fn, steps=MAX_STEPS//BATCH_SIZE)
