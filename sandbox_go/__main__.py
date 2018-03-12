@@ -268,11 +268,10 @@ class Tower:
         num_blocks = params['num_blocks']
         num_channels = params['num_channels']
         num_patterns = params['num_patterns']
-        num_inputs = (NUM_FEATURES - 1) \
-            + num_patterns
+        num_inputs = NUM_FEATURES
 
         with tf.variable_scope('01_upsample'):
-            self._embedding = EmbeddingLayer(2, [22665, num_patterns])
+            #self._embedding = EmbeddingLayer(2, [22665, num_patterns])
             self._upsample = tf.get_variable('weights', (3, 3, num_inputs, num_channels), tf.float32, glorot_op)
             self._bn = BatchNorm(num_channels)
 
@@ -291,8 +290,8 @@ class Tower:
             self._value = ValueHead(params)
 
     def __call__(self, x, mode):
-        y = self._embedding(x, mode)
-        y = tf.nn.conv2d(y, self._upsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
+        #y = self._embedding(x, mode)
+        y = tf.nn.conv2d(x, self._upsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
         y = self._bn(y, mode)
         y = tf.nn.relu(y)
 
