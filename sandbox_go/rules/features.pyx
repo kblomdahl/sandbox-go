@@ -60,7 +60,7 @@ cdef void get_features(Board board, int color, float[:,:] out) nogil:
 def pattern_embedding_initializer(shape, dtype=None, partition_info=None):
     """ Returns a _reasonable_ default value for the pattern embedding """
 
-    cdef np.ndarray out = np.random.gamma(1.0, size=shape)
+    cdef np.ndarray out = 1e-3 * np.random.gamma(1.0, size=shape)
     cdef int i, centre
 
     # set the first three components of the embedding to represent the same
@@ -78,11 +78,7 @@ def pattern_embedding_initializer(shape, dtype=None, partition_info=None):
         out[i, 1] = 1.0 if centre == 2 else 0.0  # opponent
         out[i, 2] = 1.0 if centre == 0 else 0.0  # empty
 
-    # normalize each component of the embedding so that it is in the
-    # range [0, 1)
-    out_sums = out.max(axis=0) + 1e-5
-
-    return out / out_sums[np.newaxis, :]
+    return out
 
 
 # -------- Code Generation --------
