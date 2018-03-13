@@ -30,33 +30,6 @@ from glob import glob
 MAX_STEPS = 52428800  # the total number of examples to train over
 BATCH_SIZE = 512  # the number of examples per batch
 
-def embedding_layer(x, shape, channel, name=None):
-    with tf.variable_scope(name, 'embedding'):
-        embeddings = tf.get_variable('embeddings', shape)
-
-        # extract and flatten the channel that we are going to replace with an
-        # embedding
-        x_unstack = tf.unstack(x, axis=1)  # unstack channels
-        x_ids = tf.cast(tf.reshape(x_unstack[channel], [-1]), tf.int32)
-
-        x_pattern = tf.nn.embedding_lookup(
-            embeddings,
-            x_ids
-        )
-
-        # since the embedding is at the last dimension, and we are using the NCHW
-        # order, we need to transpose the embedded tensor
-        x_pattern = tf.reshape(x_pattern, [-1, 19, 19, shape[1]])
-        x_pattern = tf.transpose(x_pattern, [0, 3, 1, 2])
-
-        # replace the channel in the input vector with the embeddings
-        x_pattern_unstack = tf.unstack(x_pattern, axis=1)
-        x_head = x_unstack[:channel]
-        x_tail = x_unstack[(channel+1):]
-
-        return tf.stack(x_head + x_pattern_unstack + x_tail, axis=1)
-
-
 def prelu(x):
     """ Parameterised relu. """
 
@@ -81,8 +54,7 @@ class EmbeddingLayer:
         x_ids = tf.cast(tf.reshape(x_unstack[self._channel], [-1]), tf.int32)
         x_pattern = tf.nn.embedding_lookup(
             self._embedding,
-            x_ids,
-            max_norm=self._shape[1]
+            x_ids
         )
 
         # since the embedding is at the last dimension, and we are using the NCHW
