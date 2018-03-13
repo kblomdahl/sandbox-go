@@ -438,7 +438,7 @@ config = tf.estimator.RunConfig(
 nn = tf.estimator.Estimator(
     config=config,
     model_fn=model_fn,
-    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
+    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '-liberty/',
     params={'num_channels': 128, 'num_blocks': 9}
 )
 nn.train(input_fn=input_fn, steps=MAX_STEPS//BATCH_SIZE)

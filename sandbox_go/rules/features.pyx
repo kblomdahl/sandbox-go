@@ -20,7 +20,7 @@
 
 import cython
 
-NUM_FEATURES = 5  # Constant used to determine the number of channels in the features array
+NUM_FEATURES = 21  # Constant used to determine the number of channels in the features array
 
 @cython.boundscheck(False)
 cdef int binary_search(int value) nogil:
@@ -47,6 +47,7 @@ cdef void get_features(Board board, int color, float[:,:] out) nogil:
 
     cdef float is_black = 1.0 if color == BLACK else 0.0
     cdef float is_white = 1.0 if color == WHITE else 0.0
+    cdef int liberty_count
     cdef int other = opposite(color)
     cdef int x, y, index
 
@@ -58,9 +59,17 @@ cdef void get_features(Board board, int color, float[:,:] out) nogil:
             out[1, index] = is_white
 
             if board.vertices[index] == color:
+                liberty_count = board._get_num_liberties(index)
+                if liberty_count > 8: liberty_count = 8
+
                 out[2, index] = 1.0
+                out[4+liberty_count, index] = 1.0
             elif board.vertices[index] == other:
+                liberty_count = board._get_num_liberties(index)
+                if liberty_count > 8: liberty_count = 8
+
                 out[3, index] = 1.0
+                out[12+liberty_count, index] = 1.0
             else:
                 out[4, index] = 1.0
 
