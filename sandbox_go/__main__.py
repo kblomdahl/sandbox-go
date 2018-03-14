@@ -30,41 +30,30 @@ from glob import glob
 MAX_STEPS = 52428800  # the total number of examples to train over
 BATCH_SIZE = 512  # the number of examples per batch
 
-def embedding_layer(x, shape, channel, name=None):
-    with tf.variable_scope(name, 'embedding'):
-        embeddings = tf.get_variable('embeddings', shape)
+def orthonormal_initializer():
+    """ Orthogonal initializer that uses the SVD instead of the QR-factorization
+    to obtain its basis, and more importantly generate filters for convolution
+    layers that are orthogonal for each output channel. """
 
-        # extract and flatten the channel that we are going to replace with an
-        # embedding
-        x_unstack = tf.unstack(x, axis=1)  # unstack channels
-        x_ids = tf.cast(tf.reshape(x_unstack[channel], [-1]), tf.int32)
+    def _init(shape, dtype=None, partition_info=None):
+        if len(shape) == 4:
+            shape_2 = (shape[3], np.prod(shape[:3]))
+        else:
+            shape_2 = (shape[0], np.prod(shape[1:]))
 
-        x_pattern = tf.nn.embedding_lookup(
-            embeddings,
-            x_ids,
-            max_norm=shape[1]
-        )
+        a = np.random.standard_normal(shape_2)
+        u, _, v = np.linalg.svd(a, full_matrices=False)
+        q = u if u.shape == shape_2 else v
 
-        # since the embedding is at the last dimension, and we are using the NCHW
-        # order, we need to transpose the embedded tensor
-        x_pattern = tf.reshape(x_pattern, [-1, 19, 19, shape[1]])
-        x_pattern = tf.transpose(x_pattern, [0, 3, 1, 2])
+        if len(shape) == 4:
+            q = q.reshape([shape[3], shape[0], shape[1], shape[2]])
 
-        # replace the channel in the input vector with the embeddings
-        x_pattern_unstack = tf.unstack(x_pattern, axis=1)
-        x_head = x_unstack[:channel]
-        x_tail = x_unstack[(channel+1):]
+            return np.transpose(q, [1, 2, 3, 0])
+        else:
+            return q.reshape(shape)
 
-        return tf.stack(x_head + x_pattern_unstack + x_tail, axis=1)
+    return _init
 
-
-def prelu(x):
-    """ Parameterised relu. """
-
-    with tf.variable_scope('prelu'):
-        alpha = tf.get_variable('alpha')
-
-        return tf.nn.leaky_relu(x, alpha)
 
 class EmbeddingLayer:
     """ Embeddings layer. """
@@ -82,8 +71,7 @@ class EmbeddingLayer:
         x_ids = tf.cast(tf.reshape(x_unstack[self._channel], [-1]), tf.int32)
         x_pattern = tf.nn.embedding_lookup(
             self._embedding,
-            x_ids,
-            max_norm=self._shape[1]
+            x_ids
         )
 
         # since the embedding is at the last dimension, and we are using the NCHW
@@ -160,12 +148,12 @@ class ResidualBlock:
     """
 
     def __init__(self, params):
-        glorot_op = tf.glorot_normal_initializer()
+        init_op = orthonormal_initializer()
         num_channels = params['num_channels']
 
-        self._conv_1 = tf.get_variable('weights_1', (3, 3, num_channels, num_channels), tf.float32, glorot_op)
+        self._conv_1 = tf.get_variable('weights_1', (3, 3, num_channels, num_channels), tf.float32, init_op)
         self._bn_1 = BatchNorm(num_channels, suffix='_1')
-        self._conv_2 = tf.get_variable('weights_2', (3, 3, num_channels, num_channels), tf.float32, glorot_op)
+        self._conv_2 = tf.get_variable('weights_2', (3, 3, num_channels, num_channels), tf.float32, init_op)
         self._bn_2 = BatchNorm(num_channels, suffix='_2')
 
         tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._conv_1))
@@ -197,14 +185,14 @@ class ValueHead:
     """
 
     def __init__(self, params):
-        glorot_op = tf.glorot_normal_initializer()
+        init_op = orthonormal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
-        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 1), tf.float32, glorot_op)
+        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 1), tf.float32, init_op)
         self._bn = BatchNorm(1)
-        self._weights_1 = tf.get_variable('weights_1', (361, 256), tf.float32, glorot_op)
-        self._weights_2 = tf.get_variable('weights_2', (256, 1), tf.float32, glorot_op)
+        self._weights_1 = tf.get_variable('weights_1', (361, 256), tf.float32, init_op)
+        self._weights_2 = tf.get_variable('weights_2', (256, 1), tf.float32, init_op)
         self._bias_1 = tf.get_variable('bias_1', (256,), tf.float32, zeros_op)
         self._bias_2 = tf.get_variable('bias_2', (1,), tf.float32, zeros_op)
 
@@ -237,13 +225,13 @@ class PolicyHead:
     """
 
     def __init__(self, params):
-        glorot_op = tf.glorot_normal_initializer()
+        init_op = orthonormal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
-        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 2), tf.float32, glorot_op)
+        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 2), tf.float32, init_op)
         self._bn = BatchNorm(2)
-        self._weights = tf.get_variable('weights', (722, 362), tf.float32, glorot_op)
+        self._weights = tf.get_variable('weights', (722, 362), tf.float32, init_op)
         self._bias = tf.get_variable('bias', (362,), tf.float32, zeros_op)
 
         tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._downsample))
@@ -267,13 +255,13 @@ class Tower:
     """
 
     def __init__(self, params):
-        glorot_op = tf.glorot_normal_initializer()
+        init_op = orthonormal_initializer()
         num_blocks = params['num_blocks']
         num_channels = params['num_channels']
         num_inputs = NUM_FEATURES
 
         with tf.variable_scope('01_upsample'):
-            self._upsample = tf.get_variable('weights', (3, 3, num_inputs, num_channels), tf.float32, glorot_op)
+            self._upsample = tf.get_variable('weights', (3, 3, num_inputs, num_channels), tf.float32, init_op)
             self._bn = BatchNorm(num_channels)
 
         self._residuals = []
@@ -344,6 +332,7 @@ def input_fn():
 
 
 def model_fn(features, labels, mode, params):
+    global_step = tf.train.get_global_step()
     tower = Tower(params)
     value_hat, policy_hat = tower(features, mode)
 
@@ -369,7 +358,6 @@ def model_fn(features, labels, mode, params):
     # first 30% of the steps, then use an exponential decay. This is similar to
     # cosine decay, and has proven critical to the value head converging at
     # all.
-    global_step = tf.train.get_global_step()
     learning_steps = MAX_STEPS//BATCH_SIZE
     learning_rate_threshold = int(0.3 * MAX_STEPS//BATCH_SIZE)
     learning_rate_exp = tf.train.exponential_decay(
