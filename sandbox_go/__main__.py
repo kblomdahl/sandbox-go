@@ -30,30 +30,6 @@ from glob import glob
 MAX_STEPS = 52428800  # the total number of examples to train over
 BATCH_SIZE = 512  # the number of examples per batch
 
-def orthonormal_initializer():
-    """ Orthogonal initializer that uses the SVD instead of the QR-factorization
-    to obtain its basis, and more importantly generate filters for convolution
-    layers that are orthogonal for each output channel. """
-
-    def _init(shape, dtype=None, partition_info=None):
-        if len(shape) == 4:
-            shape_2 = (shape[3], np.prod(shape[:3]))
-        else:
-            shape_2 = (shape[0], np.prod(shape[1:]))
-
-        a = np.random.standard_normal(shape_2)
-        u, _, v = np.linalg.svd(a, full_matrices=False)
-        q = u if u.shape == shape_2 else v
-
-        if len(shape) == 4:
-            q = q.reshape([shape[3], shape[0], shape[1], shape[2]])
-
-            return np.transpose(q, [1, 2, 3, 0])
-        else:
-            return q.reshape(shape)
-
-    return _init
-
 
 class EmbeddingLayer:
     """ Embeddings layer. """
@@ -148,7 +124,7 @@ class ResidualBlock:
     """
 
     def __init__(self, params):
-        init_op = orthonormal_initializer()
+        init_op = tf.glorot_normal_initializer()
         num_channels = params['num_channels']
 
         self._conv_1 = tf.get_variable('weights_1', (3, 3, num_channels, num_channels), tf.float32, init_op)
@@ -185,7 +161,7 @@ class ValueHead:
     """
 
     def __init__(self, params):
-        init_op = orthonormal_initializer()
+        init_op = tf.orthogonal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
@@ -195,10 +171,6 @@ class ValueHead:
         self._weights_2 = tf.get_variable('weights_2', (256, 1), tf.float32, init_op)
         self._bias_1 = tf.get_variable('bias_1', (256,), tf.float32, zeros_op)
         self._bias_2 = tf.get_variable('bias_2', (1,), tf.float32, zeros_op)
-
-        tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._downsample))
-        tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._weights_1))
-        tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._weights_2))
 
     def __call__(self, x, mode):
         y = tf.nn.conv2d(x, self._downsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
@@ -225,7 +197,7 @@ class PolicyHead:
     """
 
     def __init__(self, params):
-        init_op = orthonormal_initializer()
+        init_op = tf.orthogonal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
@@ -233,9 +205,6 @@ class PolicyHead:
         self._bn = BatchNorm(2)
         self._weights = tf.get_variable('weights', (722, 362), tf.float32, init_op)
         self._bias = tf.get_variable('bias', (362,), tf.float32, zeros_op)
-
-        tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._downsample))
-        tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._weights))
 
     def __call__(self, x, mode):
         y = tf.nn.conv2d(x, self._downsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
@@ -255,7 +224,7 @@ class Tower:
     """
 
     def __init__(self, params):
-        init_op = orthonormal_initializer()
+        init_op = tf.glorot_normal_initializer()
         num_blocks = params['num_blocks']
         num_channels = params['num_channels']
         num_patterns = params['num_patterns']
@@ -307,6 +276,9 @@ def get_dataset():
                 np.asarray([], 'f4'),  # policy
             )
 
+    def _is_valid(_features, value, _policy):
+        return tf.reduce_any(tf.not_equal(value, 0.0))
+
     def _fix_shape(features, value, policy):
         features = tf.reshape(features, [NUM_FEATURES, 19, 19])
         value = tf.reshape(value, [1])
@@ -321,7 +293,7 @@ def get_dataset():
         [text],
         [tf.float32, tf.float32, tf.float32]
     )))
-    dataset = dataset.filter(lambda _f, value, _p1: tf.not_equal(value, 0.0))
+    dataset = dataset.filter(_is_valid)
     dataset = dataset.map(_fix_shape)
     dataset = dataset.shuffle(384000)
     dataset = dataset.batch(BATCH_SIZE)
@@ -340,7 +312,7 @@ def model_fn(features, labels, mode, params):
     tower = Tower(params)
     value_hat, policy_hat = tower(features, mode)
 
-    # determine the loss for each of the components
+    # determine the loss for each of the components:
     #
     # - L2 regularization
     # - Value head
@@ -363,18 +335,18 @@ def model_fn(features, labels, mode, params):
     # cosine decay, and has proven critical to the value head converging at
     # all.
     learning_steps = MAX_STEPS//BATCH_SIZE
-    learning_rate_threshold = int(0.3 * MAX_STEPS//BATCH_SIZE)
+    learning_rate_threshold = int(0.3 * learning_steps)
     learning_rate_exp = tf.train.exponential_decay(
-        0.1,
+        0.01,
         global_step - learning_rate_threshold,
         (learning_steps - learning_rate_threshold) / 200,
-        0.96
+        0.98
     )
 
     learning_rate = tf.train.piecewise_constant(
         global_step,
         [learning_rate_threshold],
-        [0.1, learning_rate_exp]
+        [0.01, learning_rate_exp]
     )
     optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -392,9 +364,9 @@ def model_fn(features, labels, mode, params):
             return tf.reduce_mean(tf.cast(in_top_k, tf.float32))
 
         def _sign_equal():
-            sign_equal = tf.equal(tf.sign(labels['value']), tf.sign(value_hat))
+            same_sign = tf.equal(tf.sign(labels['value']), tf.sign(value_hat))
 
-            return tf.reduce_mean(tf.cast(sign_equal, tf.float32))
+            return tf.reduce_mean(tf.cast(same_sign, tf.float32))
 
         tf.summary.scalar('accuracy/policy_1', _in_top_k(1))
         tf.summary.scalar('accuracy/policy_3', _in_top_k(3))
