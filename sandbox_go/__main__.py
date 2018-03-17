@@ -26,6 +26,7 @@ import numpy as np
 
 from datetime import datetime
 from glob import glob
+from math import sqrt
 
 MAX_STEPS = 52428800  # the total number of examples to train over
 BATCH_SIZE = 512  # the number of examples per batch
@@ -165,11 +166,13 @@ class ResidualBlock:
     def __init__(self, params):
         init_op = tf.orthogonal_initializer()
         num_channels = params['num_channels']
+        num_blocks = params['num_blocks']
 
         self._conv_1 = tf.get_variable('weights_1', (3, 3, num_channels, num_channels), tf.float32, init_op)
         self._bn_1 = BatchNorm(num_channels, suffix='_1')
         self._conv_2 = tf.get_variable('weights_2', (3, 3, num_channels, num_channels), tf.float32, init_op)
         self._bn_2 = BatchNorm(num_channels, suffix='_2')
+        self._scale = 1.0 / sqrt(num_blocks)
 
         tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._conv_1))
         tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._conv_2))
@@ -185,7 +188,7 @@ class ResidualBlock:
         tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._conv_2))
 
         y = self._bn_2(y, mode)
-        y = tf.nn.relu(y + x)
+        y = tf.nn.relu(self._scale * y + x)
 
         return y
 
