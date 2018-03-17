@@ -29,7 +29,41 @@ from glob import glob
 
 MAX_STEPS = 52428800  # the total number of examples to train over
 BATCH_SIZE = 512  # the number of examples per batch
+LSUV_OPS = "LSUVOps"  # the graph collection that contains all lsuv operations
 
+
+def lsuv_initializer(output, weights):
+    """ Returns an operation that initialize the given weights and their output
+    using the LSUV [1] methodology.
+
+    [1] Dmytro Mishkin, Jiri Matas, "All you need is a good init" """
+
+    _, variance = tf.nn.moments(output, axes=[0, 2, 3], keep_dims=True)
+    variance = tf.transpose(variance, [0, 2, 3, 1])
+
+    return tf.assign(weights, tf.truediv(weights, tf.sqrt(variance)), use_locking=True)
+
+class LSUVInit(tf.train.SessionRunHook):
+    """ LSUV [1] initialization hook that calls any operations added to
+    the `LSUV_OPS` graph collection twice in sequence.
+
+    [1] Dmytro Mishkin, Jiri Matas, "All you need is a good init" """
+
+    def before_run(self, run_context):
+        session = run_context.session
+        global_step = tf.train.get_global_step()
+        if global_step.eval(session) > 0:
+            return
+
+        count = 0
+
+        for lsuv_op in tf.get_collection(LSUV_OPS):
+            session.run([lsuv_op])
+            session.run([lsuv_op])
+
+            count += 1
+
+        print('LSUV initialization finished, adjusted %d tensors.' % (count,))
 
 class EmbeddingLayer:
     """ Embeddings layer. """
@@ -137,10 +171,14 @@ class ResidualBlock:
 
     def __call__(self, x, mode):
         y = tf.nn.conv2d(x, self._conv_1, (1, 1, 1, 1), 'SAME', True, 'NCHW')
+        tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._conv_1))
+
         y = self._bn_1(y, mode)
         y = tf.nn.relu(y)
 
         y = tf.nn.conv2d(y, self._conv_2, (1, 1, 1, 1), 'SAME', True, 'NCHW')
+        tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._conv_2))
+
         y = self._bn_2(y, mode)
         y = tf.nn.relu(y + x)
 
@@ -161,11 +199,12 @@ class ValueHead:
     """
 
     def __init__(self, params):
+        glorot_op = tf.glorot_normal_initializer()
         init_op = tf.orthogonal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
-        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 1), tf.float32, init_op)
+        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 1), tf.float32, glorot_op)
         self._bn = BatchNorm(1)
         self._weights_1 = tf.get_variable('weights_1', (361, 256), tf.float32, init_op)
         self._weights_2 = tf.get_variable('weights_2', (256, 1), tf.float32, init_op)
@@ -174,6 +213,8 @@ class ValueHead:
 
     def __call__(self, x, mode):
         y = tf.nn.conv2d(x, self._downsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
+        tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._downsample))
+
         y = self._bn(y, mode)
         y = tf.nn.relu(y)
 
@@ -197,11 +238,12 @@ class PolicyHead:
     """
 
     def __init__(self, params):
+        glorot_op = tf.glorot_normal_initializer()
         init_op = tf.orthogonal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
-        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 2), tf.float32, init_op)
+        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 2), tf.float32, glorot_op)
         self._bn = BatchNorm(2)
         self._weights = tf.get_variable('weights', (722, 362), tf.float32, init_op)
         self._bias = tf.get_variable('bias', (362,), tf.float32, zeros_op)
@@ -233,6 +275,8 @@ class Tower:
             self._upsample = tf.get_variable('weights', (3, 3, num_inputs, num_channels), tf.float32, init_op)
             self._bn = BatchNorm(num_channels)
 
+        tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._upsample))
+
         self._residuals = []
 
         for i in range(num_blocks):
@@ -249,6 +293,8 @@ class Tower:
 
     def __call__(self, x, mode):
         y = tf.nn.conv2d(x, self._upsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
+        tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._upsample))
+
         y = self._bn(y, mode)
         y = tf.nn.relu(y)
 
@@ -268,7 +314,7 @@ def get_dataset():
         except ValueError:  # bad game
             return (
                 np.asarray([], 'f4'),  # features
-                np.asarray([0.0], 'f4'),  # value
+                np.asarray([], 'f4'),  # value
                 np.asarray([], 'f4'),  # policy
             )
 
@@ -401,4 +447,4 @@ nn = tf.estimator.Estimator(
     model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
     params={'num_channels': 128, 'num_blocks': 9}
 )
-nn.train(input_fn=input_fn, steps=MAX_STEPS//BATCH_SIZE)
+nn.train(input_fn=input_fn, hooks=[LSUVInit()], steps=MAX_STEPS//BATCH_SIZE)
