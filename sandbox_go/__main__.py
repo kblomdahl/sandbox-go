@@ -29,7 +29,7 @@ from glob import glob
 
 MAX_STEPS = 52428800  # the total number of examples to train over
 BATCH_SIZE = 512  # the number of examples per batch
-LSUV_OPS = "LSUVOps"  # the graph collection that contains all lsuv operations
+LSUV_OPS = 'LSUVOps'  # the graph collection that contains all lsuv operations
 
 
 def lsuv_initializer(output, weights):
@@ -41,7 +41,12 @@ def lsuv_initializer(output, weights):
     _, variance = tf.nn.moments(output, axes=[0, 2, 3], keep_dims=True)
     variance = tf.transpose(variance, [0, 2, 3, 1])
 
-    return tf.assign(weights, tf.truediv(weights, tf.sqrt(variance)), use_locking=True)
+    update_op = tf.assign(weights, tf.truediv(weights, tf.sqrt(variance)), use_locking=True)
+
+    with tf.control_dependencies([update_op]):
+        name = weights.name.split(':')[0] + '/lsuv'
+
+        return tf.sqrt(variance, name=name)
 
 class LSUVInit(tf.train.SessionRunHook):
     """ LSUV [1] initialization hook that calls any operations added to
@@ -58,8 +63,8 @@ class LSUVInit(tf.train.SessionRunHook):
         count = 0
 
         for lsuv_op in tf.get_collection(LSUV_OPS):
-            session.run([lsuv_op])
-            session.run([lsuv_op])
+            for _ in range(2):
+                _std = session.run([lsuv_op])
 
             count += 1
 
@@ -158,7 +163,7 @@ class ResidualBlock:
     """
 
     def __init__(self, params):
-        init_op = tf.glorot_normal_initializer()
+        init_op = tf.orthogonal_initializer()
         num_channels = params['num_channels']
 
         self._conv_1 = tf.get_variable('weights_1', (3, 3, num_channels, num_channels), tf.float32, init_op)
@@ -199,12 +204,11 @@ class ValueHead:
     """
 
     def __init__(self, params):
-        glorot_op = tf.glorot_normal_initializer()
         init_op = tf.orthogonal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
-        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 1), tf.float32, glorot_op)
+        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 1), tf.float32, init_op)
         self._bn = BatchNorm(1)
         self._weights_1 = tf.get_variable('weights_1', (361, 256), tf.float32, init_op)
         self._weights_2 = tf.get_variable('weights_2', (256, 1), tf.float32, init_op)
@@ -238,18 +242,19 @@ class PolicyHead:
     """
 
     def __init__(self, params):
-        glorot_op = tf.glorot_normal_initializer()
         init_op = tf.orthogonal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
-        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 2), tf.float32, glorot_op)
+        self._downsample = tf.get_variable('downsample', (1, 1, num_channels, 2), tf.float32, init_op)
         self._bn = BatchNorm(2)
         self._weights = tf.get_variable('weights', (722, 362), tf.float32, init_op)
         self._bias = tf.get_variable('bias', (362,), tf.float32, zeros_op)
 
     def __call__(self, x, mode):
         y = tf.nn.conv2d(x, self._downsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
+        tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._downsample))
+
         y = self._bn(y, mode)
         y = tf.nn.relu(y)
 
@@ -266,7 +271,7 @@ class Tower:
     """
 
     def __init__(self, params):
-        init_op = tf.glorot_normal_initializer()
+        init_op = tf.orthogonal_initializer()
         num_blocks = params['num_blocks']
         num_channels = params['num_channels']
         num_inputs = NUM_FEATURES
@@ -372,10 +377,13 @@ def model_fn(features, labels, mode, params):
 
     loss = loss_policy + loss_value + 8e-4 * loss_l2
 
-    # setup the optimizer to use a constant learning rate of `0.1` for the
+    # setup the optimizer to use a constant learning rate of `0.01` for the
     # first 30% of the steps, then use an exponential decay. This is similar to
     # cosine decay, and has proven critical to the value head converging at
     # all.
+    # 
+    # We then clip the gradients by its global norm to avoid some gradient
+    # explosions that seems to occur during the first few steps.
     learning_steps = MAX_STEPS//BATCH_SIZE
     learning_rate_threshold = int(0.3 * learning_steps)
     learning_rate_exp = tf.train.exponential_decay(
@@ -394,7 +402,14 @@ def model_fn(features, labels, mode, params):
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
     with tf.control_dependencies(update_ops):
-        train_op = optimizer.minimize(loss, global_step)
+        gradients, variables = zip(*optimizer.compute_gradients(
+            loss,
+            aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N,
+            colocate_gradients_with_ops=True
+        ))
+
+        clip_gradients, global_norm = tf.clip_by_global_norm(gradients, 5.0)
+        train_op = optimizer.apply_gradients(zip(clip_gradients, variables), global_step)
 
     # setup some nice looking metric to look at
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -414,6 +429,14 @@ def model_fn(features, labels, mode, params):
         tf.summary.scalar('accuracy/policy_3', _in_top_k(3))
         tf.summary.scalar('accuracy/policy_5', _in_top_k(5))
         tf.summary.scalar('accuracy/value', _sign_equal())
+
+        tf.summary.scalar('gradients/global_norm', global_norm)
+
+        for grad, var in zip(gradients, variables):
+            var_name = var.name.split(':', 2)[0]
+
+            tf.summary.scalar('gradients/' + var_name, tf.norm(grad))
+            tf.summary.scalar('norms/' + var_name, tf.norm(var))
 
         tf.summary.scalar('loss/policy', loss_policy)
         tf.summary.scalar('loss/value', loss_value)
