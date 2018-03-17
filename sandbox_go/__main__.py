@@ -182,13 +182,13 @@ class ResidualBlock:
         tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._conv_1))
 
         y = self._bn_1(y, mode)
-        y = tf.nn.relu(y)
+        y = tf.nn.relu6(y)
 
         y = tf.nn.conv2d(y, self._conv_2, (1, 1, 1, 1), 'SAME', True, 'NCHW')
         tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._conv_2))
 
         y = self._bn_2(y, mode)
-        y = tf.nn.relu(self._scale * y + x)
+        y = tf.nn.relu6(self._scale * y + x)
 
         return y
 
@@ -223,7 +223,7 @@ class ValueHead:
         tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._downsample))
 
         y = self._bn(y, mode)
-        y = tf.nn.relu(y)
+        y = tf.nn.relu6(y)
 
         y = tf.reshape(y, (-1, 361))
         y = tf.matmul(y, self._weights_1) + self._bias_1
@@ -259,7 +259,7 @@ class PolicyHead:
         tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._downsample))
 
         y = self._bn(y, mode)
-        y = tf.nn.relu(y)
+        y = tf.nn.relu6(y)
 
         y = tf.reshape(y, (-1, 722))
         y = tf.matmul(y, self._weights) + self._bias
@@ -304,7 +304,7 @@ class Tower:
         tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._upsample))
 
         y = self._bn(y, mode)
-        y = tf.nn.relu(y)
+        y = tf.nn.relu6(y)
 
         for resb in self._residuals:
             y = resb(y, mode)
