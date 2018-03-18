@@ -32,6 +32,46 @@ MAX_STEPS = 52428800  # the total number of examples to train over
 BATCH_SIZE = 512  # the number of examples per batch
 LSUV_OPS = 'LSUVOps'  # the graph collection that contains all lsuv operations
 
+def orthogonal_initializer():
+    """ Returns an orthogonal initializer that use QR-factorization to find
+    the orthogonal basis of a random matrix. This differs from the Tensorflow
+    implementation in that it checks for singular matrices, which is mostly a
+    problem when generating small matrices. """
+
+    def _init(shape, dtype=None, partition_info=None):
+        if dtype is None:
+            dtype = tf.float32
+
+        assert len(shape) >= 2
+
+        # flatten the input shape with the last dimension remaining so it works
+        # for convolutions
+        num_rows = 1
+        for dim in shape[:-1]:
+            num_rows *= dim
+        num_cols = shape[-1]
+
+        flat_shape = (num_cols, num_rows) if num_rows < num_cols else (num_rows, num_cols)
+
+        # check so that the random matrix is not singular
+        while True:
+            a = np.random.standard_normal(flat_shape)
+            q, r = np.linalg.qr(a)
+            d = np.diag(r)
+
+            if np.prod(d) > 1e-2:
+                break
+
+        ph = d / np.abs(d)
+        q *= ph
+
+        if num_rows < num_cols:
+            q = np.transpose(q, [1, 0])
+
+        return np.reshape(q, shape)
+
+    return _init
+
 
 def lsuv_initializer(output, weights):
     """ Returns an operation that initialize the given weights and their output
@@ -164,7 +204,7 @@ class ResidualBlock:
     """
 
     def __init__(self, params):
-        init_op = tf.orthogonal_initializer()
+        init_op = orthogonal_initializer()
         num_channels = params['num_channels']
         num_blocks = params['num_blocks']
 
@@ -207,7 +247,7 @@ class ValueHead:
     """
 
     def __init__(self, params):
-        init_op = tf.orthogonal_initializer()
+        init_op = orthogonal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
@@ -245,7 +285,7 @@ class PolicyHead:
     """
 
     def __init__(self, params):
-        init_op = tf.orthogonal_initializer()
+        init_op = orthogonal_initializer()
         zeros_op = tf.zeros_initializer()
         num_channels = params['num_channels']
 
@@ -274,7 +314,7 @@ class Tower:
     """
 
     def __init__(self, params):
-        init_op = tf.orthogonal_initializer()
+        init_op = orthogonal_initializer()
         num_blocks = params['num_blocks']
         num_channels = params['num_channels']
         num_inputs = NUM_FEATURES
