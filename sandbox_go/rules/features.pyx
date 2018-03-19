@@ -20,7 +20,7 @@
 
 import cython
 
-NUM_FEATURES = 3  # Constant used to determine the number of channels in the features array
+NUM_FEATURES = 5  # Constant used to determine the number of channels in the features array
 
 @cython.boundscheck(False)
 cdef int binary_search(int value) nogil:

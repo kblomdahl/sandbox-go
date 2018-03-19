@@ -160,7 +160,7 @@ cdef int _one(
         # necessary because we have to extract the features.
         pluck_move = <int>(total_moves * (<double>rand() / (<double>RAND_MAX + 1)))
 
-        for i in range(pluck_move - 1):
+        for i in range(pluck_move):
             if x[i] < 19 and y[i] < 19:  # not pass
                 index = 19 * y[i] + x[i]
 

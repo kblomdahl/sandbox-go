@@ -27,6 +27,8 @@ import numpy as np
 from datetime import datetime
 from glob import glob
 
+MAX_STEPS = 52428800  # the total number of examples to train over
+BATCH_SIZE = 512  # the number of examples per batch
 TILES = [1, 4, 7, 9, 11, 14, 17]
 
 def tower(x, mode, params):
@@ -78,8 +80,7 @@ def tower(x, mode, params):
 
     return tf.concat(policy_slices, axis=1)
 
-
-def get_dataset(batch_size):
+def get_dataset():
     def _parse_sgf(line):
         try:
             features, policy =  sgf.one(line)
@@ -100,13 +101,13 @@ def get_dataset(batch_size):
     )))
     dataset = dataset.filter(lambda features, policy: tf.reduce_any(tf.not_equal(policy, 0.0)))
     dataset = dataset.shuffle(1176000)
-    dataset = dataset.batch(batch_size)
+    dataset = dataset.batch(BATCH_SIZE)
 
     return dataset
 
 
 def input_fn(batch_size):
-    return get_dataset(batch_size).map(lambda features, policy:
+    return get_dataset().map(lambda features, policy:
         (features, {'policy': policy})
     )
 
@@ -123,14 +124,40 @@ def model_fn(features, labels, mode, params):
         policy_hat
     )
 
-    # setup the optimizer
+    # setup the optimizer to use a constant learning rate of `0.01` for the
+    # first 30% of the steps, then use an exponential decay. This is similar to
+    # cosine decay, and has proven critical to the value head converging at
+    # all.
+    # 
+    # We then clip the gradients by its global norm to avoid some gradient
+    # explosions that seems to occur during the first few steps.
     global_step = tf.train.get_global_step()
-    learning_rate = tf.train.exponential_decay(1e-1, global_step, (26214400 / params['batch_size']) / 256, 0.96)
+    learning_steps = MAX_STEPS//BATCH_SIZE
+    learning_rate_threshold = int(0.3 * learning_steps)
+    learning_rate_exp = tf.train.exponential_decay(
+        0.01,
+        global_step - learning_rate_threshold,
+        (learning_steps - learning_rate_threshold) / 200,
+        0.98
+    )
+
+    learning_rate = tf.train.piecewise_constant(
+        global_step,
+        [learning_rate_threshold],
+        [0.01, learning_rate_exp]
+    )
     optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
     with tf.control_dependencies(update_ops):
-        train_op = optimizer.minimize(loss, global_step)
+        gradients, variables = zip(*optimizer.compute_gradients(
+            loss,
+            aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N,
+            colocate_gradients_with_ops=True
+        ))
+
+        clip_gradients, global_norm = tf.clip_by_global_norm(gradients, 5.0)
+        train_op = optimizer.apply_gradients(zip(clip_gradients, variables), global_step)
 
     # setup some nice looking metric to look at
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -139,6 +166,13 @@ def model_fn(features, labels, mode, params):
         tf.summary.scalar('accuracy/policy_5', tf.reduce_mean(tf.cast(tf.nn.in_top_k(policy_hat, policy_hot, k=5), tf.float32)))
         tf.summary.scalar('loss', loss)
         tf.summary.scalar('learning_rate', learning_rate)
+        tf.summary.scalar('gradients/global_norm', global_norm)
+
+        for grad, var in zip(gradients, variables):
+            var_name = var.name.split(':', 2)[0]
+
+            tf.summary.scalar('gradients/' + var_name, tf.norm(grad))
+            tf.summary.scalar('norms/' + var_name, tf.norm(var))
 
         tf.summary.histogram('policy_hot', policy_hot)
         tf.summary.histogram('policy_hat', policy_hat)
@@ -155,7 +189,6 @@ def model_fn(features, labels, mode, params):
 # reduce the amount of spam that we're getting to the console
 tf.logging.set_verbosity(tf.logging.WARN)
 
-batch_size = 512
 config = tf.estimator.RunConfig(
     session_config = tf.ConfigProto(
         gpu_options = tf.GPUOptions(
@@ -168,6 +201,6 @@ nn = tf.estimator.Estimator(
     config=config,
     model_fn=model_fn,
     model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
-    params={'num_patterns': 2, 'batch_size': batch_size}
+    params={'num_patterns': 2}
 )
-nn.train(input_fn=lambda: input_fn(batch_size), steps=26214400/batch_size)
+nn.train(input_fn=input_fn, hooks=[], steps=MAX_STEPS//BATCH_SIZE)
