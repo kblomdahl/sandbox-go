@@ -340,6 +340,33 @@ cdef class Board:
 
         return count
 
+    def to_string(self, mark=None):
+        out = '╭'  + '──' * 19 + '─╮'
+        out += '\n'
+
+        for y in range(19):
+            out += '│'
+            for x in range(19):
+                index = 19 * y + x
+
+                if self.vertices[index] == 1:
+                    out += ' ●'
+                elif self.vertices[index] == 2:
+                    out += ' ○'
+                else:
+                    if mark and index in mark:
+                        out += ' X'
+                    elif index in [60, 66, 72, 174, 180, 186, 288, 294, 300]:
+                        out += ' ·'
+                    else:
+                        out += '  '
+
+            out += ' │\n'
+
+        out += '╰'  + '──' * 19 + '─╯\n'
+        out += '            ● Black    ○ White\n'
+
+        return out
 
 # -------- Code Generation --------
 
