@@ -322,7 +322,7 @@ class Tower:
             + num_patterns
 
         with tf.variable_scope('01_upsample'):
-            self._embedding = EmbeddingLayer(2, [22665, num_patterns], initializer=pattern_embedding_initializer)
+            self._embedding = EmbeddingLayer(2, [22665, num_patterns], initializer=init_op)
             self._upsample = tf.get_variable('weights', (3, 3, num_inputs, num_channels), tf.float32, init_op)
             self._bn = BatchNorm(num_channels)
 
@@ -514,7 +514,7 @@ config = tf.estimator.RunConfig(
 nn = tf.estimator.Estimator(
     config=config,
     model_fn=model_fn,
-    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '-p08/',
+    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '-p08-orthogonal/',
     params={'num_channels': 128, 'num_patterns': 8, 'num_blocks': 9}
 )
 nn.train(input_fn=input_fn, hooks=[LSUVInit()], steps=MAX_STEPS//BATCH_SIZE)
