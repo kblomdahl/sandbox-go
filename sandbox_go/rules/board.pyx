@@ -341,30 +341,30 @@ cdef class Board:
         return count
 
     def to_string(self, mark=None):
-        out = '╭'  + '──' * 19 + '─╮'
+        out = u'╭'  + u'──' * 19 + u'─╮'
         out += '\n'
 
         for y in range(19):
-            out += '│'
+            out += u'│'
             for x in range(19):
                 index = 19 * y + x
 
                 if self.vertices[index] == 1:
-                    out += ' ●'
+                    out += u' ●'
                 elif self.vertices[index] == 2:
-                    out += ' ○'
+                    out += u' ○'
                 else:
                     if mark and index in mark:
-                        out += ' X'
+                        out += u' X'
                     elif index in [60, 66, 72, 174, 180, 186, 288, 294, 300]:
-                        out += ' ·'
+                        out += u' ·'
                     else:
-                        out += '  '
+                        out += u'  '
 
-            out += ' │\n'
+            out += u' │\n'
 
-        out += '╰'  + '──' * 19 + '─╯\n'
-        out += '            ● Black    ○ White\n'
+        out += u'╰'  + u'──' * 19 + u'─╯\n'
+        out += u'            ● Black    ○ White\n'
 
         return out
 
