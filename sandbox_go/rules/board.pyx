@@ -323,8 +323,8 @@ cdef class Board:
         cdef int[4] ns
         cdef int n
 
-        for i in range(361):
-            visited[i] = 0
+        for n in range(361):
+            visited[n] = 0
         visited[361] = 1
 
         while True:
