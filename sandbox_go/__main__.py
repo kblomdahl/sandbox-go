@@ -418,7 +418,7 @@ def model_fn(features, labels, mode, params):
         logits=policy_hat
     ))
 
-    loss = loss_policy + loss_value + 8e-4 * loss_l2
+    loss = loss_policy + loss_value + 1e-4 * loss_l2
 
     # setup the optimizer to use a constant learning rate of `0.01` for the
     # first 30% of the steps, then use an exponential decay. This is similar to
@@ -510,7 +510,7 @@ config = tf.estimator.RunConfig(
 nn = tf.estimator.Estimator(
     config=config,
     model_fn=model_fn,
-    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '-liberty/',
+    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '-liberty-low-reg/',
     params={'num_channels': 128, 'num_blocks': 9}
 )
 nn.train(input_fn=input_fn, hooks=[LSUVInit()], steps=MAX_STEPS//BATCH_SIZE)
