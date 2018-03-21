@@ -26,7 +26,8 @@ from .rules.features cimport get_features
 from .rules.features import NUM_FEATURES
 
 import cython
-from libc.stdlib cimport malloc, free, rand, RAND_MAX
+from libc.stdlib cimport malloc, free, rand, srand, RAND_MAX
+from libc.time cimport time
 cimport numpy as np
 import numpy as np
 
@@ -214,3 +215,7 @@ def one(line):
         policy[next1_index] = 1.0
 
         return (features, value, policy)
+
+# initialize the (terrible) C random number generator as otherwise the seed
+# is always 0 in the beginning.
+srand(time(NULL))
