@@ -106,7 +106,7 @@ def get_dataset():
     return dataset
 
 
-def input_fn(batch_size):
+def input_fn():
     return get_dataset().map(lambda features, policy:
         (features, {'policy': policy})
     )
