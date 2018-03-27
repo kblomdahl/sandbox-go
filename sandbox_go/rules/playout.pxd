@@ -19,7 +19,6 @@
 # SOFTWARE.
 
 from .board cimport Board
-from .color cimport BLACK, WHITE, opposite
-cimport numpy as np
 
-cdef void get_features(Board board, int color, float[:,:] out)
+cdef void playout(Board board, int next_color, int[1] state) nogil
+cdef void score_votes(Board board, int next_color, int[361] votes)

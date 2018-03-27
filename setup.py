@@ -31,6 +31,7 @@ extensions = [
     Extension('sandbox_go.rules.color', ['sandbox_go/rules/color.pyx'], include_dirs=['.', np.get_include()]),
     Extension('sandbox_go.rules.board', ['sandbox_go/rules/board.pyx'], include_dirs=['.', np.get_include()]),
     Extension('sandbox_go.rules.features', ['sandbox_go/rules/features.pyx'], include_dirs=['.', np.get_include()]),
+    Extension('sandbox_go.rules.playout', ['sandbox_go/rules/playout.pyx'], include_dirs=['.', np.get_include()]),
     Extension('sandbox_go.sgf', ['sandbox_go/sgf.pyx'], include_dirs=['.', np.get_include()]),
 ]
 

@@ -18,9 +18,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from playout cimport score_votes
 import cython
 
-NUM_FEATURES = 5  # Constant used to determine the number of channels in the features array
+NUM_FEATURES = 9  # Constant used to determine the number of channels in the features array
 
 @cython.boundscheck(False)
 cdef int binary_search(int value) nogil:
@@ -42,11 +43,12 @@ cdef int binary_search(int value) nogil:
 
 
 @cython.boundscheck(False)
-cdef void get_features(Board board, int color, float[:,:] out) nogil:
+cdef void get_features(Board board, int color, float[:,:] out):
     """ Returns the input features for the given board state and player """
 
     cdef float is_black = 1.0 if color == BLACK else 0.0
     cdef float is_white = 1.0 if color == WHITE else 0.0
+    cdef float is_ko = 0.0
     cdef int other = opposite(color)
     cdef int x, y, index
 
@@ -58,11 +60,29 @@ cdef void get_features(Board board, int color, float[:,:] out) nogil:
             out[1, index] = is_white
 
             if board.vertices[index] == color:
-                out[2, index] = 1.0
-            elif board.vertices[index] == other:
                 out[3, index] = 1.0
-            else:
+            elif board.vertices[index] == other:
                 out[4, index] = 1.0
+            else:
+                out[5, index] = 1.0
+
+            if board._is_valid(color, index) and board._is_ko(color, index):
+                out[6, index] = 1.0
+                is_ko = 1.0
+
+    for index in range(361):
+        out[2, index] = is_ko
+
+    # playout features
+    cdef int[361] votes
+
+    score_votes(board, color, votes)
+
+    for index in range(361):
+        if votes[index] > 0:
+            out[7, index] = 0.2 * votes[index]
+        else:
+            out[8, index] = -0.2 * votes[index]
 
 
 # -------- Code Generation --------

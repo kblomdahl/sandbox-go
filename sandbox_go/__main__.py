@@ -212,7 +212,6 @@ class ResidualBlock:
         self._bn_1 = BatchNorm(num_channels, suffix='_1')
         self._conv_2 = tf.get_variable('weights_2', (3, 3, num_channels, num_channels), tf.float32, init_op)
         self._bn_2 = BatchNorm(num_channels, suffix='_2')
-        self._scale = 1.0 / sqrt(num_blocks)
 
         tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._conv_1))
         tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(self._conv_2))
@@ -228,7 +227,7 @@ class ResidualBlock:
         tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._conv_2))
 
         y = self._bn_2(y, mode)
-        y = tf.nn.relu(self._scale * y + x)
+        y = tf.nn.relu(y + x)
 
         return y
 
@@ -451,7 +450,7 @@ def model_fn(features, labels, mode, params):
             colocate_gradients_with_ops=True
         ))
 
-        clip_gradients, global_norm = tf.clip_by_global_norm(gradients, 5.0)
+        clip_gradients, global_norm = tf.clip_by_global_norm(gradients, 10.0)
         train_op = optimizer.apply_gradients(zip(clip_gradients, variables), global_step)
 
     # setup some nice looking metric to look at
@@ -510,7 +509,7 @@ config = tf.estimator.RunConfig(
 nn = tf.estimator.Estimator(
     config=config,
     model_fn=model_fn,
-    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '/',
+    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '-playout/',
     params={'num_channels': 128, 'num_blocks': 9}
 )
 nn.train(input_fn=input_fn, hooks=[LSUVInit()], steps=MAX_STEPS//BATCH_SIZE)
