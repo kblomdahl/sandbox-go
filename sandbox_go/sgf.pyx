@@ -201,9 +201,8 @@ def one(line):
     cdef float[:,:] features_view = features
     cdef int winner = 0, next1_color = 0, next1_index, next2_index
 
-    with nogil:
-        if _one(line_ptr, line_length, board, &winner, &next1_color, &next1_index, &next2_index):
-            get_features(board, next1_color, features_view)
+    if _one(line_ptr, line_length, board, &winner, &next1_color, &next1_index, &next2_index):
+        get_features(board, next1_color, features_view)
 
     # allocate the appropriate NumPy arrays to contain the policies and features
     if winner == 0 or next1_color == 0:

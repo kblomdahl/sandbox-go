@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from sandbox_go.rules.features import NUM_FEATURES, pattern_embedding_initializer
+from sandbox_go.rules.features import NUM_FEATURES
 import sandbox_go.sgf as sgf
 
 import tensorflow as tf
@@ -114,11 +114,14 @@ class LSUVInit(tf.train.SessionRunHook):
 class EmbeddingLayer:
     """ Embeddings layer. """
 
-    def __init__(self, channel, shape, initializer=None):
+    def __init__(self, channel, shape, initializer=None, suffix=None):
+        if not suffix:
+            suffix = ''
+
         self._channel = channel
         self._shape = shape
 
-        self._embedding = tf.get_variable('embeddings', shape, initializer=initializer)
+        self._embedding = tf.get_variable('embeddings' + suffix, shape, initializer=initializer)
 
     def __call__(self, x, mode):
         # extract and flatten the channel that we are going to replace with an
@@ -140,7 +143,7 @@ class EmbeddingLayer:
         x_head = x_unstack[:self._channel]
         x_tail = x_unstack[(self._channel+1):]
 
-        return tf.stack(x_head + x_pattern_unstack + x_tail, axis=1)
+        return tf.stack(x_head + x_tail + x_pattern_unstack, axis=1)
 
 
 class BatchNorm:
@@ -318,11 +321,12 @@ class Tower:
         num_blocks = params['num_blocks']
         num_channels = params['num_channels']
         num_patterns = params['num_patterns']
-        num_inputs = (NUM_FEATURES - 1) \
-            + num_patterns
+        num_inputs = (NUM_FEATURES - 2) \
+            + 2 * num_patterns
 
         with tf.variable_scope('01_upsample'):
-            self._embedding = EmbeddingLayer(2, [22665, num_patterns], initializer=init_op)
+            self._embedding1 = EmbeddingLayer(2, [22665, num_patterns], initializer=init_op, suffix='_1')
+            self._embedding2 = EmbeddingLayer(2, [22666, num_patterns], initializer=init_op, suffix='_2')
             self._upsample = tf.get_variable('weights', (3, 3, num_inputs, num_channels), tf.float32, init_op)
             self._bn = BatchNorm(num_channels)
 
@@ -343,7 +347,8 @@ class Tower:
             self._value = ValueHead(params)
 
     def __call__(self, x, mode):
-        y = self._embedding(x, mode)
+        y = self._embedding1(x, mode)
+        y = self._embedding2(y, mode)
         y = tf.nn.conv2d(y, self._upsample, (1, 1, 1, 1), 'SAME', True, 'NCHW')
         tf.add_to_collection(LSUV_OPS, lsuv_initializer(y, self._upsample))
 
@@ -514,7 +519,7 @@ config = tf.estimator.RunConfig(
 nn = tf.estimator.Estimator(
     config=config,
     model_fn=model_fn,
-    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '-p08-orthogonal/',
+    model_dir='models/' + datetime.now().strftime('%Y%m%d.%H%M') + '-p08-orthogonal-next/',
     params={'num_channels': 128, 'num_patterns': 8, 'num_blocks': 9}
 )
 nn.train(input_fn=input_fn, hooks=[LSUVInit()], steps=MAX_STEPS//BATCH_SIZE)

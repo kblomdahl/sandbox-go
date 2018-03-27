@@ -21,7 +21,7 @@
 import cython
 import numpy as np
 
-NUM_FEATURES = 3  # Constant used to determine the number of channels in the features array
+NUM_FEATURES = 4  # Constant used to determine the number of channels in the features array
 
 @cython.boundscheck(False)
 cdef int binary_search(int value) nogil:
@@ -41,12 +41,14 @@ cdef int binary_search(int value) nogil:
 
     return -1
 
+
 @cython.boundscheck(False)
-cdef void get_features(Board board, int color, float[:,:] out) nogil:
+cdef void get_features(Board board, int color, float[:,:] out):
     """ Returns the input features for the given board state and player """
 
     cdef float is_black = 1.0 if color == BLACK else 0.0
     cdef float is_white = 1.0 if color == WHITE else 0.0
+    cdef Board next_board
     cdef int x, y, index
 
     for y in range(19):
@@ -57,28 +59,10 @@ cdef void get_features(Board board, int color, float[:,:] out) nogil:
             out[1, index] = is_white
             out[2, index] = <float>binary_search(board._get_pattern(color, index))
 
-def pattern_embedding_initializer(shape, dtype=None, partition_info=None):
-    """ Returns a _reasonable_ default value for the pattern embedding """
-
-    cdef np.ndarray out = 1e-3 * np.random.gamma(1.0, size=shape)
-    cdef int i, centre
-
-    # set the first three components of the embedding to represent the same
-    # thing as the _baseline_ branch provides. But since it is an embedding the
-    # network can unlearn this if it does not find it useful:
-    #
-    # - If each vertex belongs to the current player
-    # - If each vertex belongs to the opponent
-    # - If each vertex does not belong to any player
-    #
-    for i in range(22665):
-        centre = _PATTERN[i] & 0x3
-
-        out[i, 0] = 1.0 if centre == 1 else 0.0  # player
-        out[i, 1] = 1.0 if centre == 2 else 0.0  # opponent
-        out[i, 2] = 1.0 if centre == 0 else 0.0  # empty
-
-    return out
+            # predict the pattern one move forward
+            next_board = board.copy()
+            if next_board._is_valid(color, index):
+                out[3, index] = 1 + <float>binary_search(next_board._get_pattern(color, index))
 
 
 # -------- Code Generation --------
